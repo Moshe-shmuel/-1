@@ -22,12 +22,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["wix", "nsis"],
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "allowElevation": false,
-      "installerIcon": "icons/icon.ico"
+    "targets": "all",
+    "windows": {
+      "nsis": {
+        "oneClick": true
+      }
     },
     "icon": [
       "icons/32x32.png",
