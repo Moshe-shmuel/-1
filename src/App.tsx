@@ -38,7 +38,7 @@ import {
 import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
 import { tauriAPI } from './db';
 
-// Removed EMBEDDED_SOURCES import
+import { EMBEDDED_SOURCES } from './embeddedSources';
 
 const NavButton = ({ id, icon: Icon, label, onClick }: { id: TabId, icon: any, label: string, onClick: (id: TabId) => void }) => (
   <button
@@ -309,17 +309,21 @@ const App: React.FC = () => {
     fetch('/api/sources')
       .then(res => res.json())
       .then(data => {
-        if (data && data.length > 0) {
-          setSources(prev => Array.from(new Set([...prev, ...data])));
-        }
+        const remoteSources = Array.isArray(data) ? data : [];
+        setSources(prev => Array.from(new Set([...prev, ...remoteSources, ...Object.keys(EMBEDDED_SOURCES)])));
       })
-      .catch(err => console.log('Standalone mode'));
+      .catch(err => {
+        console.log('Standalone mode');
+        setSources(prev => Array.from(new Set([...prev, ...Object.keys(EMBEDDED_SOURCES)])));
+      });
   }, []);
 
   useEffect(() => {
     if (selectedSource && !localSource) {
       if (sourceCache[selectedSource]) {
         setSourceContent(sourceCache[selectedSource]);
+      } else if (EMBEDDED_SOURCES[selectedSource]) {
+        setSourceContent(EMBEDDED_SOURCES[selectedSource]);
       } else {
         fetch(`/api/sources/${selectedSource}`)
           .then(res => res.text())
