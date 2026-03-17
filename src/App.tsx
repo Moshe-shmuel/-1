@@ -38,8 +38,6 @@ import {
 import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
 import { tauriAPI } from './db';
 
-import { EMBEDDED_SOURCES } from './embeddedSources';
-
 const NavButton = ({ id, icon: Icon, label, onClick }: { id: TabId, icon: any, label: string, onClick: (id: TabId) => void }) => (
   <button
     onClick={() => onClick(id)}
@@ -148,23 +146,74 @@ const App: React.FC = () => {
 
   const seedDatabase = async () => {
     if (!isDesktop && !user) return;
-    const cats = ["תנך", "תלמוד בבלי", "רמבם", "שולחן ערוך"];
-    for (const name of cats) {
-      const id = Math.random().toString(36).substring(7);
-      if (isDesktop) {
-        await tauriAPI.insert({ table: 'categories', data: { id, name, order: 0 } });
-      } else {
-        await addDoc(collection(db, 'categories'), { name, order: 0 });
+    setIsProcessing(true);
+    addLog("מתחיל אתחול מסד נתונים...", "info");
+    
+    try {
+      const cats = ["תנך", "תלמוד בבלי", "רמבם", "שולחן ערוך", "מקורות"];
+      const catIds: Record<string, string> = {};
+      
+      for (const name of cats) {
+        const id = Math.random().toString(36).substring(7);
+        catIds[name] = id;
+        if (isDesktop) {
+          await tauriAPI.insert({ table: 'categories', data: { id, name, order: 0 } });
+        } else {
+          await addDoc(collection(db, 'categories'), { name, order: 0 });
+        }
       }
-    }
-    addLog("מסד הנתונים אותחל עם קטגוריות ראשיות", "success");
-    // Refresh
-    if (isDesktop) {
-      const data = await tauriAPI.query({ table: 'categories' });
-      setCategories(data);
-    } else {
-      const snap = await getDocs(collection(db, 'categories'));
-      setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+      // Create a subcategory for sources
+      const subId = Math.random().toString(36).substring(7);
+      if (isDesktop) {
+        await tauriAPI.insert({ table: 'subcategories', data: { id: subId, name: "קבצי מקור", categoryId: catIds["מקורות"] } });
+      } else {
+        await addDoc(collection(db, 'subcategories'), { name: "קבצי מקור", categoryId: catIds["מקורות"] });
+      }
+
+      // Fetch files from /api/sources and add them to the DB
+      const res = await fetch('/api/sources');
+      const files = await res.json();
+      
+      if (Array.isArray(files)) {
+        for (const filename of files) {
+          const contentRes = await fetch(`/api/sources/${filename}`);
+          const content = await contentRes.text();
+          const fileId = Math.random().toString(36).substring(7);
+          const name = filename.replace(/\.[^/.]+$/, "");
+          
+          if (isDesktop) {
+            await tauriAPI.insert({ 
+              table: 'files', 
+              data: { id: fileId, name, content, subcategoryId: subId, isMain: 1 } 
+            });
+          } else {
+            await addDoc(collection(db, 'files'), {
+              name,
+              content,
+              subcategoryId: subId,
+              isMain: true
+            });
+          }
+          addLog(`הוסף קובץ: ${name}`, "info");
+        }
+      }
+
+      addLog("מסד הנתונים אותחל בהצלחה עם קבצי המקור", "success");
+      
+      // Refresh
+      if (isDesktop) {
+        const data = await tauriAPI.query({ table: 'categories' });
+        setCategories(data);
+      } else {
+        const snap = await getDocs(collection(db, 'categories'));
+        setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
+    } catch (err) {
+      addLog("שגיאה באתחול מסד הנתונים", "error");
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -310,11 +359,10 @@ const App: React.FC = () => {
       .then(res => res.json())
       .then(data => {
         const remoteSources = Array.isArray(data) ? data : [];
-        setSources(prev => Array.from(new Set([...prev, ...remoteSources, ...Object.keys(EMBEDDED_SOURCES)])));
+        setSources(prev => Array.from(new Set([...prev, ...remoteSources])));
       })
       .catch(err => {
-        console.log('Standalone mode');
-        setSources(prev => Array.from(new Set([...prev, ...Object.keys(EMBEDDED_SOURCES)])));
+        console.log('Standalone mode or API unavailable');
       });
   }, []);
 
@@ -322,8 +370,6 @@ const App: React.FC = () => {
     if (selectedSource && !localSource) {
       if (sourceCache[selectedSource]) {
         setSourceContent(sourceCache[selectedSource]);
-      } else if (EMBEDDED_SOURCES[selectedSource]) {
-        setSourceContent(EMBEDDED_SOURCES[selectedSource]);
       } else {
         fetch(`/api/sources/${selectedSource}`)
           .then(res => res.text())
