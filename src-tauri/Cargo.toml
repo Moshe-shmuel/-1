@@ -1,0 +1,23 @@
+[package]
+name = "highlight-app"
+version = "1.0.0"
+description = "אפליקציה להדגשת טקסטים תורניים"
+authors = ["Highlight App Team"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+tauri-plugin-sql = "2.0.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[lib]
+name = "highlight_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "highlight-app"
+path = "src/main.rs"
