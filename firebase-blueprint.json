@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "Main category (e.g., Tanakh, Talmud)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Category name" },
+        "order": { "type": "number", "description": "Display order" }
+      },
+      "required": ["name"]
+    },
+    "Subcategory": {
+      "title": "Subcategory",
+      "description": "Subcategory (e.g., Masechet, Parasha)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Subcategory name" },
+        "categoryId": { "type": "string", "description": "Reference to parent category" }
+      },
+      "required": ["name", "categoryId"]
+    },
+    "SourceFile": {
+      "title": "SourceFile",
+      "description": "A text file containing source or commentary",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "File name" },
+        "content": { "type": "string", "description": "Text content" },
+        "subcategoryId": { "type": "string", "description": "Reference to subcategory" },
+        "isMain": { "type": "boolean", "description": "Calculated flag for main source" }
+      },
+      "required": ["name", "content", "subcategoryId"]
+    }
+  },
+  "firestore": {
+    "/categories": {
+      "schema": "Category",
+      "description": "Top level categories"
+    },
+    "/subcategories": {
+      "schema": "Subcategory",
+      "description": "Secondary level folders"
+    },
+    "/files": {
+      "schema": "SourceFile",
+      "description": "The actual text files"
+    }
+  }
+}

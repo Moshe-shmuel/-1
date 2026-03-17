@@ -1,0 +1,5 @@
+{
+  "name": "מדגיש אוטומטי לדיבור המתחיל",
+  "description": "Identify and highlight 'Dibbur HaMatchil' (source quotes) in commentary texts using Regex and Fuzzy Matching.",
+  "requestFramePermissions": []
+}
