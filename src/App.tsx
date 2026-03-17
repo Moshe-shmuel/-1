@@ -36,7 +36,8 @@ import {
   signOut
 } from 'firebase/auth';
 import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
-import { EMBEDDED_SOURCES } from './embeddedSources';
+
+// Removed EMBEDDED_SOURCES import
 
 const NavButton = ({ id, icon: Icon, label, onClick }: { id: TabId, icon: any, label: string, onClick: (id: TabId) => void }) => (
   <button
@@ -291,10 +292,10 @@ const App: React.FC = () => {
   const [sourceSections, setSourceSections] = useState<{ header: string, fullHeader: string, words: { text: string, lineIdx: number }[] }[]>([]);
 
   // Highlighting States
-  const [sources, setSources] = useState<string[]>(Object.keys(EMBEDDED_SOURCES));
-  const [selectedSource, setSelectedSource] = useState<string>(Object.keys(EMBEDDED_SOURCES)[0] || '');
-  const [sourceCache, setSourceCache] = useState<Record<string, string>>(EMBEDDED_SOURCES);
-  const [sourceContent, setSourceContent] = useState<string>(EMBEDDED_SOURCES[Object.keys(EMBEDDED_SOURCES)[0]] || '');
+  const [sources, setSources] = useState<string[]>([]);
+  const [selectedSource, setSelectedSource] = useState<string>('');
+  const [sourceCache, setSourceCache] = useState<Record<string, string>>({});
+  const [sourceContent, setSourceContent] = useState<string>('');
   const [localSource, setLocalSource] = useState<string>('');
 
   const activeSourceContent = localSource || sourceContent;
