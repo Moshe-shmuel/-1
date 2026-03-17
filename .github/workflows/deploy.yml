@@ -38,23 +38,8 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: commentary-processor-bundle
+          name: commentary-processor-web-bundle
           path: output/
-
-      - name: Create Release
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: output/commentary-processor.html
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
-          body: |
-            Automated release for Commentary Processor.
-            Download the standalone HTML file below.
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Pages
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
