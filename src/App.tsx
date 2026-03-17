@@ -36,6 +36,7 @@ import {
   signOut
 } from 'firebase/auth';
 import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
+import { tauriAPI } from './db';
 
 // Removed EMBEDDED_SOURCES import
 
@@ -94,12 +95,12 @@ const App: React.FC = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string>('');
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
-  const isElectron = !!(window as any).electronAPI;
+  const isDesktop = !!(window as any).__TAURI_INTERNALS__;
 
   useEffect(() => {
-    if (isElectron) {
+    if (isDesktop) {
       // Load categories from SQLite
-      (window as any).electronAPI.query({ table: 'categories' }).then((data: any) => {
+      tauriAPI.query({ table: 'categories' }).then((data: any) => {
         setCategories(data);
       });
     } else {
@@ -114,12 +115,12 @@ const App: React.FC = () => {
       });
       return () => unsubscribe();
     }
-  }, [isElectron]);
+  }, [isDesktop]);
 
   useEffect(() => {
     if (selectedCategoryId) {
-      if (isElectron) {
-        (window as any).electronAPI.query({ table: 'subcategories', where: { categoryId: selectedCategoryId } }).then((data: any) => {
+      if (isDesktop) {
+        tauriAPI.query({ table: 'subcategories', where: { categoryId: selectedCategoryId } }).then((data: any) => {
           setSubcategories(data);
         });
       } else {
@@ -131,7 +132,7 @@ const App: React.FC = () => {
     } else {
       setSubcategories([]);
     }
-  }, [selectedCategoryId, isElectron]);
+  }, [selectedCategoryId, isDesktop]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -146,20 +147,20 @@ const App: React.FC = () => {
   const handleLogout = () => signOut(auth);
 
   const seedDatabase = async () => {
-    if (!isElectron && !user) return;
+    if (!isDesktop && !user) return;
     const cats = ["תנך", "תלמוד בבלי", "רמבם", "שולחן ערוך"];
     for (const name of cats) {
       const id = Math.random().toString(36).substring(7);
-      if (isElectron) {
-        await (window as any).electronAPI.insert({ table: 'categories', data: { id, name, order: 0 } });
+      if (isDesktop) {
+        await tauriAPI.insert({ table: 'categories', data: { id, name, order: 0 } });
       } else {
         await addDoc(collection(db, 'categories'), { name, order: 0 });
       }
     }
     addLog("מסד הנתונים אותחל עם קטגוריות ראשיות", "success");
     // Refresh
-    if (isElectron) {
-      const data = await (window as any).electronAPI.query({ table: 'categories' });
+    if (isDesktop) {
+      const data = await tauriAPI.query({ table: 'categories' });
       setCategories(data);
     } else {
       const snap = await getDocs(collection(db, 'categories'));
@@ -174,8 +175,8 @@ const App: React.FC = () => {
     
     try {
       let files: any[] = [];
-      if (isElectron) {
-        files = await (window as any).electronAPI.query({ table: 'files', where: { subcategoryId: selectedSubcategoryId } });
+      if (isDesktop) {
+        files = await tauriAPI.query({ table: 'files', where: { subcategoryId: selectedSubcategoryId } });
       } else {
         const q = query(collection(db, 'files'), where('subcategoryId', '==', selectedSubcategoryId));
         const snap = await getDocs(q);
@@ -219,14 +220,14 @@ const App: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
 
   const handleUploadToDb = async () => {
-    if (!selectedSubcategoryId || loadedFiles.length === 0 || (!isElectron && !user)) return;
+    if (!selectedSubcategoryId || loadedFiles.length === 0 || (!isDesktop && !user)) return;
     setIsUploading(true);
     addLog(`מעלה ${loadedFiles.length} קבצים ל-DB...`, "info");
     try {
       for (const f of loadedFiles) {
         const id = Math.random().toString(36).substring(7);
-        if (isElectron) {
-          await (window as any).electronAPI.insert({ 
+        if (isDesktop) {
+          await tauriAPI.insert({ 
             table: 'files', 
             data: { id, name: f.name, content: f.content, subcategoryId: selectedSubcategoryId, isMain: 0 } 
           });
@@ -242,8 +243,8 @@ const App: React.FC = () => {
       // Also upload main source if it's local
       if (localSource) {
         const id = Math.random().toString(36).substring(7);
-        if (isElectron) {
-          await (window as any).electronAPI.insert({ 
+        if (isDesktop) {
+          await tauriAPI.insert({ 
             table: 'files', 
             data: { id, name: selectedSource.replace(/\.[^/.]+$/, ""), content: localSource, subcategoryId: selectedSubcategoryId, isMain: 1 } 
           });
@@ -267,9 +268,9 @@ const App: React.FC = () => {
   const createSubcategory = async (name: string) => {
     if (!selectedCategoryId || !name) return;
     const id = Math.random().toString(36).substring(7);
-    if (isElectron) {
-      await (window as any).electronAPI.insert({ table: 'subcategories', data: { id, name, categoryId: selectedCategoryId } });
-      const data = await (window as any).electronAPI.query({ table: 'subcategories', where: { categoryId: selectedCategoryId } });
+    if (isDesktop) {
+      await tauriAPI.insert({ table: 'subcategories', data: { id, name, categoryId: selectedCategoryId } });
+      const data = await tauriAPI.query({ table: 'subcategories', where: { categoryId: selectedCategoryId } });
       setSubcategories(data);
     } else {
       await addDoc(collection(db, 'subcategories'), {
@@ -1719,14 +1720,14 @@ const App: React.FC = () => {
             icon={Globe}
           >
             <div className="space-y-6">
-              {(!isElectron && !user) ? (
+              {(!isDesktop && !user) ? (
                 <div className="text-center p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
                   <p className="text-slate-600 mb-4">יש להתחבר כדי לגשת למסד הנתונים</p>
                   <button onClick={handleLogin} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold">התחבר</button>
                 </div>
               ) : (
                 <>
-                  {isElectron && (
+                  {isDesktop && (
                     <div className="p-3 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold flex items-center gap-2">
                       <CheckCircle size={14} />
                       מצב אופליין (Electron) פעיל - משתמש ב-SQLite מקומי
