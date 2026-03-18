@@ -7,9 +7,7 @@
     "core:default",
     "core:path:default",
     "core:event:default",
-    "core:shell:allow-open",
     "sql:default",
-    "fs:default",
-    "fs:allow-resource-read"
+    "fs:default"
   ]
 }
