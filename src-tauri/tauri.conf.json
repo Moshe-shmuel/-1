@@ -41,9 +41,7 @@
     ],
     "windows": {
       "nsis": {
-        "oneClick": true,
-        "perMachine": false,
-        "allowElevation": false
+        "installMode": "currentUser"
       }
     }
   }
