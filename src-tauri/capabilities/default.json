@@ -5,11 +5,11 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:path:default",
+    "core:event:default",
     "sql:default",
     "fs:default",
-    "path:default",
-    "fs-resource-read",
-    "shell:default",
-    "event:default"
+    "fs:allow-resource-read",
+    "shell:allow-open"
   ]
 }
