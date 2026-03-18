@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/capability.json",
+  "identifier": "default",
+  "description": "Default permissions for the application",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "sql:default",
+    "fs:default",
+    "path:default",
+    "fs-resource-read",
+    "shell:default",
+    "event:default"
+  ]
+}

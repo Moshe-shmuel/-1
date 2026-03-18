@@ -1,0 +1,10 @@
+{
+  "identifier": "fs-resource-read",
+  "description": "Allow reading files from the resource directory",
+  "permissions": [
+    {
+      "identifier": "fs:allow-read",
+      "allow": [{ "path": "$RESOURCE/*" }]
+    }
+  ]
+}

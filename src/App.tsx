@@ -37,6 +37,8 @@ import {
 } from 'firebase/auth';
 import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
 import { tauriAPI } from './db';
+import { invoke } from "@tauri-apps/api/core";
+import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
 
 const NavButton = ({ id, icon: Icon, label, onClick }: { id: TabId, icon: any, label: string, onClick: (id: TabId) => void }) => (
   <button
@@ -171,32 +173,56 @@ const App: React.FC = () => {
         await addDoc(collection(db, 'subcategories'), { name: "קבצי מקור", categoryId: catIds["מקורות"] });
       }
 
-      // Fetch files from /api/sources and add them to the DB
-      const res = await fetch('/api/sources');
-      const files = await res.json();
-      
-      if (Array.isArray(files)) {
-        for (const filename of files) {
-          const contentRes = await fetch(`/api/sources/${filename}`);
-          const content = await contentRes.text();
-          const fileId = Math.random().toString(36).substring(7);
-          const name = filename.replace(/\.[^/.]+$/, "");
+      let filesToProcess: { name: string, content: string }[] = [];
+
+      if (isDesktop) {
+        // Desktop mode: read from bundled resources
+        try {
+          const resourcePath = await invoke<string>("get_resource_path");
+          const sourcesPath = `${resourcePath}/sources`;
+          const entries = await readDir(sourcesPath);
           
-          if (isDesktop) {
-            await tauriAPI.insert({ 
-              table: 'files', 
-              data: { id: fileId, name, content, subcategoryId: subId, isMain: 1 } 
-            });
-          } else {
-            await addDoc(collection(db, 'files'), {
-              name,
-              content,
-              subcategoryId: subId,
-              isMain: true
-            });
+          for (const entry of entries) {
+            if (entry.name && entry.name.endsWith(".txt")) {
+              const content = await readTextFile(`${sourcesPath}/${entry.name}`);
+              filesToProcess.push({ name: entry.name, content });
+            }
           }
-          addLog(`הוסף קובץ: ${name}`, "info");
+        } catch (err) {
+          addLog("שגיאה בטעינת קבצי מקור מהמשאבים", "error");
+          console.error(err);
         }
+      } else {
+        // Web mode: fetch from API
+        const res = await fetch('/api/sources');
+        const files = await res.json();
+        if (Array.isArray(files)) {
+          for (const filename of files) {
+            const contentRes = await fetch(`/api/sources/${filename}`);
+            const content = await contentRes.text();
+            filesToProcess.push({ name: filename, content });
+          }
+        }
+      }
+      
+      for (const file of filesToProcess) {
+        const fileId = Math.random().toString(36).substring(7);
+        const name = file.name.replace(/\.[^/.]+$/, "");
+        
+        if (isDesktop) {
+          await tauriAPI.insert({ 
+            table: 'files', 
+            data: { id: fileId, name, content: file.content, subcategoryId: subId, isMain: 1 } 
+          });
+        } else {
+          await addDoc(collection(db, 'files'), {
+            name,
+            content: file.content,
+            subcategoryId: subId,
+            isMain: true
+          });
+        }
+        addLog(`הוסף קובץ: ${name}`, "info");
       }
 
       addLog("מסד הנתונים אותחל בהצלחה עם קבצי המקור", "success");
@@ -355,32 +381,58 @@ const App: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    fetch('/api/sources')
-      .then(res => res.json())
-      .then(data => {
-        const remoteSources = Array.isArray(data) ? data : [];
-        setSources(prev => Array.from(new Set([...prev, ...remoteSources])));
-      })
-      .catch(err => {
-        console.log('Standalone mode or API unavailable');
-      });
-  }, []);
+    if (isDesktop) {
+      // Desktop mode: read from bundled resources
+      invoke<string>("get_resource_path").then(resourcePath => {
+        const sourcesPath = `${resourcePath}/sources`;
+        readDir(sourcesPath).then(entries => {
+          const localSources = entries
+            .filter(e => e.name && e.name.endsWith(".txt"))
+            .map(e => e.name as string);
+          setSources(prev => Array.from(new Set([...prev, ...localSources])));
+        }).catch(err => console.error('Error reading sources dir:', err));
+      }).catch(err => console.error('Error getting resource path:', err));
+    } else {
+      // Web mode: fetch from API
+      fetch('/api/sources')
+        .then(res => res.json())
+        .then(data => {
+          const remoteSources = Array.isArray(data) ? data : [];
+          setSources(prev => Array.from(new Set([...prev, ...remoteSources])));
+        })
+        .catch(err => {
+          console.log('Standalone mode or API unavailable');
+        });
+    }
+  }, [isDesktop]);
 
   useEffect(() => {
     if (selectedSource && !localSource) {
       if (sourceCache[selectedSource]) {
         setSourceContent(sourceCache[selectedSource]);
       } else {
-        fetch(`/api/sources/${selectedSource}`)
-          .then(res => res.text())
-          .then(data => {
-            setSourceContent(data);
-            setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
-          })
-          .catch(err => console.error('Error fetching source:', err));
+        if (isDesktop) {
+          // Desktop mode: read from bundled resources
+          invoke<string>("get_resource_path").then(resourcePath => {
+            const filePath = `${resourcePath}/sources/${selectedSource}`;
+            readTextFile(filePath).then(data => {
+              setSourceContent(data);
+              setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
+            }).catch(err => console.error('Error reading source file:', err));
+          });
+        } else {
+          // Web mode: fetch from API
+          fetch(`/api/sources/${selectedSource}`)
+            .then(res => res.text())
+            .then(data => {
+              setSourceContent(data);
+              setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
+            })
+            .catch(err => console.error('Error fetching source:', err));
+        }
       }
     }
-  }, [selectedSource, localSource, sourceCache]);
+  }, [selectedSource, localSource, sourceCache, isDesktop]);
 
   const currentFileContent = loadedFiles[previewIdx]?.content;
 
