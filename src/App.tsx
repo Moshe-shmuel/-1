@@ -90,49 +90,60 @@ const App: React.FC = () => {
   const [terminatorChar, setTerminatorChar] = useState('.:-');
   const [generateLinks, setGenerateLinks] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [subcategories, setSubcategories] = useState<any[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string>('');
+  const [folders, setFolders] = useState<string[]>([]);
+  const [subfolders, setSubfolders] = useState<string[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string>('');
+  const [selectedSubfolder, setSelectedSubfolder] = useState<string>('');
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const isDesktop = !!(window as any).__TAURI_INTERNALS__;
 
   useEffect(() => {
     if (isDesktop) {
-      // Load categories from SQLite
-      tauriAPI.query({ table: 'categories' }).then((data: any) => {
-        setCategories(data);
-      });
+      // Desktop mode: read from bundled resources
+      invoke<string>("get_resource_path").then(resourcePath => {
+        const sourcesPath = `${resourcePath}/sources`;
+        readDir(sourcesPath).then(entries => {
+          const localFolders = entries
+            .filter(e => e.isDirectory)
+            .map(e => e.name as string);
+          setFolders(localFolders);
+        }).catch(err => console.error('Error reading sources dir:', err));
+      }).catch(err => console.error('Error getting resource path:', err));
     } else {
-      const unsubscribe = onAuthStateChanged(auth, (u) => {
-        setUser(u);
-        if (u) {
-          // Fetch categories
-          getDocs(collection(db, 'categories')).then(snap => {
-            setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-          });
-        }
-      });
-      return () => unsubscribe();
+      // Web mode: fetch from API
+      fetch('/api/sources/folders')
+        .then(res => res.json())
+        .then(data => {
+          setFolders(Array.isArray(data) ? data : []);
+        })
+        .catch(err => console.error('Error fetching folders:', err));
     }
   }, [isDesktop]);
 
   useEffect(() => {
-    if (selectedCategoryId) {
+    if (selectedFolder) {
       if (isDesktop) {
-        tauriAPI.query({ table: 'subcategories', where: { categoryId: selectedCategoryId } }).then((data: any) => {
-          setSubcategories(data);
+        invoke<string>("get_resource_path").then(resourcePath => {
+          const folderPath = `${resourcePath}/sources/${selectedFolder}`;
+          readDir(folderPath).then(entries => {
+            const localSubfolders = entries
+              .filter(e => e.isDirectory)
+              .map(e => e.name as string);
+            setSubfolders(localSubfolders);
+          }).catch(err => console.error('Error reading subfolders dir:', err));
         });
       } else {
-        const q = query(collection(db, 'subcategories'), where('categoryId', '==', selectedCategoryId));
-        getDocs(q).then(snap => {
-          setSubcategories(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
+        fetch(`/api/sources/folders/${selectedFolder}`)
+          .then(res => res.json())
+          .then(data => {
+            setSubfolders(Array.isArray(data) ? data : []);
+          })
+          .catch(err => console.error('Error fetching subfolders:', err));
       }
     } else {
-      setSubcategories([]);
+      setSubfolders([]);
     }
-  }, [selectedCategoryId, isDesktop]);
+  }, [selectedFolder, isDesktop]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -146,116 +157,33 @@ const App: React.FC = () => {
 
   const handleLogout = () => signOut(auth);
 
-  const seedDatabase = async () => {
-    if (!isDesktop && !user) return;
+  const handleLoadSubfolder = async () => {
+    if (!selectedSubfolder) return;
     setIsProcessing(true);
-    addLog("מתחיל אתחול מסד נתונים...", "info");
+    addLog("טוען קבצים מהתיקייה...", "info");
     
     try {
-      const cats = ["תנך", "תלמוד בבלי", "רמבם", "שולחן ערוך", "מקורות"];
-      const catIds: Record<string, string> = {};
-      
-      for (const name of cats) {
-        const id = Math.random().toString(36).substring(7);
-        catIds[name] = id;
-        if (isDesktop) {
-          await tauriAPI.insert({ table: 'categories', data: { id, name, order: 0 } });
-        } else {
-          await addDoc(collection(db, 'categories'), { name, order: 0 });
-        }
-      }
-
-      // Create a subcategory for sources
-      const subId = Math.random().toString(36).substring(7);
+      let files: { name: string, content: string }[] = [];
       if (isDesktop) {
-        await tauriAPI.insert({ table: 'subcategories', data: { id: subId, name: "קבצי מקור", categoryId: catIds["מקורות"] } });
-      } else {
-        await addDoc(collection(db, 'subcategories'), { name: "קבצי מקור", categoryId: catIds["מקורות"] });
-      }
-
-      let filesToProcess: { name: string, content: string }[] = [];
-
-      if (isDesktop) {
-        // Desktop mode: read from bundled resources
-        try {
-          const resourcePath = await invoke<string>("get_resource_path");
-          const sourcesPath = `${resourcePath}/sources`;
-          const entries = await readDir(sourcesPath);
-          
-          for (const entry of entries) {
-            if (entry.name && entry.name.endsWith(".txt")) {
-              const content = await readTextFile(`${sourcesPath}/${entry.name}`);
-              filesToProcess.push({ name: entry.name, content });
-            }
+        const resourcePath = await invoke<string>("get_resource_path");
+        const subfolderPath = `${resourcePath}/sources/${selectedFolder}/${selectedSubfolder}`;
+        const entries = await readDir(subfolderPath);
+        for (const entry of entries) {
+          if (entry.name && entry.name.endsWith(".txt")) {
+            const content = await readTextFile(`${subfolderPath}/${entry.name}`);
+            files.push({ name: entry.name, content });
           }
-        } catch (err) {
-          addLog("שגיאה בטעינת קבצי מקור מהמשאבים", "error");
-          console.error(err);
         }
       } else {
-        // Web mode: fetch from API
-        const res = await fetch('/api/sources');
-        const files = await res.json();
-        if (Array.isArray(files)) {
-          for (const filename of files) {
-            const contentRes = await fetch(`/api/sources/${filename}`);
+        const res = await fetch(`/api/sources/files/${selectedFolder}/${selectedSubfolder}`);
+        const filenames = await res.json();
+        if (Array.isArray(filenames)) {
+          for (const filename of filenames) {
+            const contentRes = await fetch(`/api/sources/content/${selectedFolder}/${selectedSubfolder}/${filename}`);
             const content = await contentRes.text();
-            filesToProcess.push({ name: filename, content });
+            files.push({ name: filename, content });
           }
         }
-      }
-      
-      for (const file of filesToProcess) {
-        const fileId = Math.random().toString(36).substring(7);
-        const name = file.name.replace(/\.[^/.]+$/, "");
-        
-        if (isDesktop) {
-          await tauriAPI.insert({ 
-            table: 'files', 
-            data: { id: fileId, name, content: file.content, subcategoryId: subId, isMain: 1 } 
-          });
-        } else {
-          await addDoc(collection(db, 'files'), {
-            name,
-            content: file.content,
-            subcategoryId: subId,
-            isMain: true
-          });
-        }
-        addLog(`הוסף קובץ: ${name}`, "info");
-      }
-
-      addLog("מסד הנתונים אותחל בהצלחה עם קבצי המקור", "success");
-      
-      // Refresh
-      if (isDesktop) {
-        const data = await tauriAPI.query({ table: 'categories' });
-        setCategories(data);
-      } else {
-        const snap = await getDocs(collection(db, 'categories'));
-        setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      }
-    } catch (err) {
-      addLog("שגיאה באתחול מסד הנתונים", "error");
-      console.error(err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleLoadSubcategory = async () => {
-    if (!selectedSubcategoryId) return;
-    setIsProcessing(true);
-    addLog("טוען קבצים ממסד הנתונים...", "info");
-    
-    try {
-      let files: any[] = [];
-      if (isDesktop) {
-        files = await tauriAPI.query({ table: 'files', where: { subcategoryId: selectedSubcategoryId } });
-      } else {
-        const q = query(collection(db, 'files'), where('subcategoryId', '==', selectedSubcategoryId));
-        const snap = await getDocs(q);
-        files = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
       }
       
       if (files.length === 0) {
@@ -276,10 +204,10 @@ const App: React.FC = () => {
       setSourceContent(shortest.content);
       setLocalSource('');
 
-      const commentaries = files.filter(f => f.id !== shortest.id).map(f => ({
-        name: f.name,
+      const commentaries = files.filter(f => f.name !== shortest.name).map(f => ({
+        name: f.name.replace(/\.[^/.]+$/, ""),
         content: f.content,
-        originalName: f.name + ".txt"
+        originalName: f.name
       }));
 
       setLoadedFiles(commentaries);
@@ -287,78 +215,16 @@ const App: React.FC = () => {
       setIsDbModalOpen(false);
     } catch (err) {
       addLog("שגיאה בטעינת קבצים", "error");
+      console.error(err);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const [isUploading, setIsUploading] = useState(false);
-
-  const handleUploadToDb = async () => {
-    if (!selectedSubcategoryId || loadedFiles.length === 0 || (!isDesktop && !user)) return;
-    setIsUploading(true);
-    addLog(`מעלה ${loadedFiles.length} קבצים ל-DB...`, "info");
-    try {
-      for (const f of loadedFiles) {
-        const id = Math.random().toString(36).substring(7);
-        if (isDesktop) {
-          await tauriAPI.insert({ 
-            table: 'files', 
-            data: { id, name: f.name, content: f.content, subcategoryId: selectedSubcategoryId, isMain: 0 } 
-          });
-        } else {
-          await addDoc(collection(db, 'files'), {
-            name: f.name,
-            content: f.content,
-            subcategoryId: selectedSubcategoryId,
-            isMain: false
-          });
-        }
-      }
-      // Also upload main source if it's local
-      if (localSource) {
-        const id = Math.random().toString(36).substring(7);
-        if (isDesktop) {
-          await tauriAPI.insert({ 
-            table: 'files', 
-            data: { id, name: selectedSource.replace(/\.[^/.]+$/, ""), content: localSource, subcategoryId: selectedSubcategoryId, isMain: 1 } 
-          });
-        } else {
-          await addDoc(collection(db, 'files'), {
-            name: selectedSource.replace(/\.[^/.]+$/, ""),
-            content: localSource,
-            subcategoryId: selectedSubcategoryId,
-            isMain: true
-          });
-        }
-      }
-      addLog("העלאה הושלמה בהצלחה", "success");
-    } catch (err) {
-      addLog("שגיאה בהעלאה ל-DB", "error");
-    } finally {
-      setIsUploading(false);
-    }
+  const createSubfolder = (name: string) => {
+    addLog(`יצירת תיקיית משנה: ${name} (פעולה זו לא נתמכת כרגע דרך הממשק)`, "info");
   };
 
-  const createSubcategory = async (name: string) => {
-    if (!selectedCategoryId || !name) return;
-    const id = Math.random().toString(36).substring(7);
-    if (isDesktop) {
-      await tauriAPI.insert({ table: 'subcategories', data: { id, name, categoryId: selectedCategoryId } });
-      const data = await tauriAPI.query({ table: 'subcategories', where: { categoryId: selectedCategoryId } });
-      setSubcategories(data);
-    } else {
-      await addDoc(collection(db, 'subcategories'), {
-        name,
-        categoryId: selectedCategoryId
-      });
-      // Refresh
-      const q = query(collection(db, 'subcategories'), where('categoryId', '==', selectedCategoryId));
-      const snap = await getDocs(q);
-      setSubcategories(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }
-  };
-  
   // Review States
   const [reviewQueue, setReviewQueue] = useState<ReviewItem[]>([]);
   const [currentReviewBatch, setCurrentReviewBatch] = useState<ReviewItem[]>([]);
@@ -1450,7 +1316,7 @@ const App: React.FC = () => {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 text-right text-slate-600 hover:bg-blue-50 hover:text-blue-600"
           >
             <Globe size={18} />
-            <span className="font-semibold text-sm">בחירת קבצים מה-DB</span>
+            <span className="font-semibold text-sm">בחירת קבצים מהתקנה</span>
           </button>
         </nav>
 
@@ -1818,92 +1684,71 @@ const App: React.FC = () => {
           <Modal
             isOpen={isDbModalOpen}
             onClose={() => setIsDbModalOpen(false)}
-            title="בחירת קבצים ממסד הנתונים"
-            icon={Globe}
+            title="בחירת קבצים מהתקנה"
+            icon={Folder}
           >
             <div className="space-y-6">
-              {(!isDesktop && !user) ? (
-                <div className="text-center p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-                  <p className="text-slate-600 mb-4">יש להתחבר כדי לגשת למסד הנתונים</p>
-                  <button onClick={handleLogin} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold">התחבר</button>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-bold text-slate-700 block mb-2">בחר קטגוריה (תיקייה ראשית)</label>
+                  <select 
+                    value={selectedFolder}
+                    onChange={(e) => setSelectedFolder(e.target.value)}
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">בחר תיקייה...</option>
+                    {folders.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
                 </div>
-              ) : (
-                <>
-                  {isDesktop && (
-                    <div className="p-3 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold flex items-center gap-2">
-                      <CheckCircle size={14} />
-                      מצב אופליין (Electron) פעיל - משתמש ב-SQLite מקומי
-                    </div>
-                  )}
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-bold text-slate-700 block mb-2">סוג פרשנות (תיקייה ראשית)</label>
-                      <select 
-                        value={selectedCategoryId}
-                        onChange={(e) => setSelectedCategoryId(e.target.value)}
-                        className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">בחר קטגוריה...</option>
-                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
 
-                    {selectedCategoryId && (
-                      <div>
-                        <label className="text-sm font-bold text-slate-700 block mb-2">פרשנות על... (תיקיית משנה)</label>
-                        <select 
-                          value={selectedSubcategoryId}
-                          onChange={(e) => setSelectedSubcategoryId(e.target.value)}
-                          className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">בחר תיקיית משנה...</option>
-                          {subcategories.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex gap-4">
-                    <button 
-                      onClick={handleLoadSubcategory}
-                      disabled={!selectedSubcategoryId}
-                      className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg disabled:bg-slate-300"
+                {selectedFolder && (
+                  <div>
+                    <label className="text-sm font-bold text-slate-700 block mb-2">בחר ספר (תיקיית משנה)</label>
+                    <select 
+                      value={selectedSubfolder}
+                      onChange={(e) => setSelectedSubfolder(e.target.value)}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
                     >
+                      <option value="">בחר תיקיית משנה...</option>
+                      {subfolders.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-4">
+                <button 
+                  onClick={handleLoadSubfolder}
+                  disabled={!selectedSubfolder || isProcessing}
+                  className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg disabled:bg-slate-300 flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <RefreshCw className="animate-spin" size={20} />
+                      טוען...
+                    </>
+                  ) : (
+                    <>
+                      <Download size={20} />
                       טען והשווה (זיהוי מקור אוטומטי)
-                    </button>
-                  </div>
-
-                  {loadedFiles.length > 0 && selectedSubcategoryId && (
-                    <div className="p-4 bg-green-50 border border-green-100 rounded-xl flex items-center justify-between">
-                      <span className="text-xs text-green-700 font-bold">ישנם {loadedFiles.length} קבצים טעונים שניתן לשמור בתיקייה זו</span>
-                      <button 
-                        onClick={handleUploadToDb}
-                        disabled={isUploading}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 disabled:bg-slate-300"
-                      >
-                        {isUploading ? 'מעלה...' : 'שמור קבצים ב-DB'}
-                      </button>
-                    </div>
+                    </>
                   )}
+                </button>
+              </div>
 
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                    {selectedCategoryId && (
-                      <button 
-                        onClick={() => {
-                          const name = prompt("שם תיקיית המשנה החדשה:");
-                          if (name) createSubcategory(name);
-                        }}
-                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                      >
-                        <Plus size={12} /> הוסף תיקיית משנה
-                      </button>
-                    )}
-                    {categories.length === 0 && (
-                      <button onClick={seedDatabase} className="text-xs text-blue-600 hover:underline">אתחל מסד נתונים (קטגוריות ברירת מחדל)</button>
-                    )}
-                  </div>
-                </>
-              )}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                {selectedFolder && (
+                  <button 
+                    onClick={() => {
+                      const name = prompt("שם תיקיית המשנה החדשה:");
+                      if (name) createSubfolder(name);
+                    }}
+                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                  >
+                    <Plus size={12} /> הוסף תיקיית משנה
+                  </button>
+                )}
+              </div>
             </div>
           </Modal>
         </div>
