@@ -13,6 +13,9 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Explicitly serve public/data directory
+  app.use('/data', express.static(path.join(process.cwd(), 'public/data')));
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

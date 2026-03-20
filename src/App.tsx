@@ -90,32 +90,52 @@ const App: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    fetch('/data/sources.json')
-      .then(res => res.json())
+    console.log('Fetching sources from data/sources.json...');
+    fetch('data/sources.json')
+      .then(res => {
+        console.log('Fetch response status:', res.status);
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
       .then(data => {
-        if (data && data.length > 0) {
+        console.log('Raw fetched sources data:', data);
+        if (Array.isArray(data) && data.length > 0) {
           const cleanSources = data
             .map((s: string) => s.replace(/\.json$/, ''))
             .filter((s: string) => !s.startsWith('רשי על') && !s.startsWith('תוספות על'));
+          console.log('Filtered sources:', cleanSources);
           setSources(cleanSources);
-          if (!selectedSource) setSelectedSource(cleanSources[0]);
+          if (cleanSources.length > 0) {
+            setSelectedSource(prev => prev || cleanSources[0]);
+          }
+        } else {
+          console.warn('Fetched sources data is not a non-empty array:', data);
         }
       })
-      .catch(err => console.log('Standalone mode or data not generated yet'));
+      .catch(err => {
+        console.error('Error fetching sources:', err);
+        setSources([]);
+      });
   }, []);
 
   useEffect(() => {
     if (selectedSource && !localSource) {
+      console.log(`Fetching content for source: ${selectedSource}`);
       if (sourceCache[selectedSource]) {
+        console.log(`Using cached content for: ${selectedSource}`);
         setSourceContent(sourceCache[selectedSource]);
       } else {
-        fetch(`/data/${selectedSource}.json`)
-          .then(res => res.json())
+        fetch(`data/${encodeURIComponent(selectedSource)}.json`)
+          .then(res => {
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return res.json();
+          })
           .then(data => {
+            console.log(`Successfully fetched content for: ${selectedSource}`);
             setSourceContent(data);
             setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
           })
-          .catch(err => console.error('Error fetching source:', err));
+          .catch(err => console.error(`Error fetching source ${selectedSource}:`, err));
       }
 
       // Pre-fetch commentaries
@@ -124,13 +144,19 @@ const App: React.FC = () => {
       
       [rashiName, tosafotName].forEach(name => {
         if (!sourceCache[name]) {
-          fetch(`/data/${name}.json`)
-            .then(res => res.json())
+          console.log(`Pre-fetching commentary: ${name}`);
+          fetch(`data/${encodeURIComponent(name)}.json`)
+            .then(res => {
+              if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+              return res.json();
+            })
             .then(data => {
+              console.log(`Successfully pre-fetched commentary: ${name}`);
               setSourceCache(prev => ({ ...prev, [name]: data }));
             })
             .catch(() => {
               // Commentary might not exist for this source
+              console.log(`Commentary ${name} not found or failed to fetch.`);
             });
         }
       });
