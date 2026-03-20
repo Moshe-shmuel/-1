@@ -1,28 +1,24 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "1.0.0",
-  "description": "אפליקציה להדגשת טקסטים תורניים עם תמיכה באופליין",
-  "author": "Highlight App Team",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-  "build": "node scripts/generate-sources.js && tsc && vite build",
+    "dev": "tsx server.ts",
+    "prebuild": "node scripts/convert-txt-to-json.js",
+    "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit",
-    "tauri": "tauri"
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
-    "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-fs": "^2.0.0",
-    "@tauri-apps/plugin-sql": "^2.0.0",
     "@types/lodash": "^4.17.24",
     "@vitejs/plugin-react": "^5.0.4",
+    "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "firebase": "^12.10.0",
     "fuzzball": "^2.2.3",
     "jszip": "^3.10.1",
     "lodash": "^4.17.23",
@@ -33,7 +29,6 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",

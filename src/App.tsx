@@ -16,29 +16,7 @@ import {
   Bold, Italic, Underline, RefreshCw, AArrowUp, AArrowDown,
   Highlighter, ArrowLeftRight, Plus, Minus
 } from 'lucide-react';
-import { db, auth } from './firebase';
-import { 
-  collection, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  addDoc, 
-  doc, 
-  getDoc,
-  onSnapshot
-} from 'firebase/firestore';
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  User,
-  signOut
-} from 'firebase/auth';
 import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
-import { tauriAPI } from './db';
-import { invoke } from "@tauri-apps/api/core";
-import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
 
 const NavButton = ({ id, icon: Icon, label, onClick }: { id: TabId, icon: any, label: string, onClick: (id: TabId) => void }) => (
   <button
@@ -89,142 +67,7 @@ const App: React.FC = () => {
   const [previewIdx, setPreviewIdx] = useState(0);
   const [terminatorChar, setTerminatorChar] = useState('.:-');
   const [generateLinks, setGenerateLinks] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [folders, setFolders] = useState<string[]>([]);
-  const [subfolders, setSubfolders] = useState<string[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string>('');
-  const [selectedSubfolder, setSelectedSubfolder] = useState<string>('');
-  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
-  const isDesktop = !!(window as any).__TAURI_INTERNALS__;
-
-  useEffect(() => {
-    if (isDesktop) {
-      // Desktop mode: read from bundled resources
-      invoke<string>("get_resource_path").then(resourcePath => {
-        const sourcesPath = `${resourcePath}/sources`;
-        readDir(sourcesPath).then(entries => {
-          const localFolders = entries
-            .filter(e => e.isDirectory)
-            .map(e => e.name as string);
-          setFolders(localFolders);
-        }).catch(err => console.error('Error reading sources dir:', err));
-      }).catch(err => console.error('Error getting resource path:', err));
-    } else {
-      // Web mode: fetch from API
-      fetch('/api/sources/folders')
-        .then(res => res.json())
-        .then(data => {
-          setFolders(Array.isArray(data) ? data : []);
-        })
-        .catch(err => console.error('Error fetching folders:', err));
-    }
-  }, [isDesktop]);
-
-  useEffect(() => {
-    if (selectedFolder) {
-      if (isDesktop) {
-        invoke<string>("get_resource_path").then(resourcePath => {
-          const folderPath = `${resourcePath}/sources/${selectedFolder}`;
-          readDir(folderPath).then(entries => {
-            const localSubfolders = entries
-              .filter(e => e.isDirectory)
-              .map(e => e.name as string);
-            setSubfolders(localSubfolders);
-          }).catch(err => console.error('Error reading subfolders dir:', err));
-        });
-      } else {
-        fetch(`/api/sources/folders/${selectedFolder}`)
-          .then(res => res.json())
-          .then(data => {
-            setSubfolders(Array.isArray(data) ? data : []);
-          })
-          .catch(err => console.error('Error fetching subfolders:', err));
-      }
-    } else {
-      setSubfolders([]);
-    }
-  }, [selectedFolder, isDesktop]);
-
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-      addLog("התחברת בהצלחה", "success");
-    } catch (err) {
-      addLog("שגיאה בהתחברות", "error");
-    }
-  };
-
-  const handleLogout = () => signOut(auth);
-
-  const handleLoadSubfolder = async () => {
-    if (!selectedSubfolder) return;
-    setIsProcessing(true);
-    addLog("טוען קבצים מהתיקייה...", "info");
-    
-    try {
-      let files: { name: string, content: string }[] = [];
-      if (isDesktop) {
-        const resourcePath = await invoke<string>("get_resource_path");
-        const subfolderPath = `${resourcePath}/sources/${selectedFolder}/${selectedSubfolder}`;
-        const entries = await readDir(subfolderPath);
-        for (const entry of entries) {
-          if (entry.name && entry.name.endsWith(".txt")) {
-            const content = await readTextFile(`${subfolderPath}/${entry.name}`);
-            files.push({ name: entry.name, content });
-          }
-        }
-      } else {
-        const res = await fetch(`/api/sources/files/${selectedFolder}/${selectedSubfolder}`);
-        const filenames = await res.json();
-        if (Array.isArray(filenames)) {
-          for (const filename of filenames) {
-            const contentRes = await fetch(`/api/sources/content/${selectedFolder}/${selectedSubfolder}/${filename}`);
-            const content = await contentRes.text();
-            files.push({ name: filename, content });
-          }
-        }
-      }
-      
-      if (files.length === 0) {
-        addLog("לא נמצאו קבצים בתיקייה זו", "error");
-        setIsProcessing(false);
-        return;
-      }
-
-      // Find shortest name as main source
-      let shortest = files[0];
-      files.forEach(f => {
-        if (f.name.length < shortest.name.length) {
-          shortest = f;
-        }
-      });
-
-      setSelectedSource(shortest.name);
-      setSourceContent(shortest.content);
-      setLocalSource('');
-
-      const commentaries = files.filter(f => f.name !== shortest.name).map(f => ({
-        name: f.name.replace(/\.[^/.]+$/, ""),
-        content: f.content,
-        originalName: f.name
-      }));
-
-      setLoadedFiles(commentaries);
-      addLog(`נטענו ${files.length} קבצים. המקור הראשי זוהה כ: ${shortest.name}`, "success");
-      setIsDbModalOpen(false);
-    } catch (err) {
-      addLog("שגיאה בטעינת קבצים", "error");
-      console.error(err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const createSubfolder = (name: string) => {
-    addLog(`יצירת תיקיית משנה: ${name} (פעולה זו לא נתמכת כרגע דרך הממשק)`, "info");
-  };
-
+  
   // Review States
   const [reviewQueue, setReviewQueue] = useState<ReviewItem[]>([]);
   const [currentReviewBatch, setCurrentReviewBatch] = useState<ReviewItem[]>([]);
@@ -247,58 +90,52 @@ const App: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (isDesktop) {
-      // Desktop mode: read from bundled resources
-      invoke<string>("get_resource_path").then(resourcePath => {
-        const sourcesPath = `${resourcePath}/sources`;
-        readDir(sourcesPath).then(entries => {
-          const localSources = entries
-            .filter(e => e.name && e.name.endsWith(".txt"))
-            .map(e => e.name as string);
-          setSources(prev => Array.from(new Set([...prev, ...localSources])));
-        }).catch(err => console.error('Error reading sources dir:', err));
-      }).catch(err => console.error('Error getting resource path:', err));
-    } else {
-      // Web mode: fetch from API
-      fetch('/api/sources')
-        .then(res => res.json())
-        .then(data => {
-          const remoteSources = Array.isArray(data) ? data : [];
-          setSources(prev => Array.from(new Set([...prev, ...remoteSources])));
-        })
-        .catch(err => {
-          console.log('Standalone mode or API unavailable');
-        });
-    }
-  }, [isDesktop]);
+    fetch('/data/sources.json')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.length > 0) {
+          const cleanSources = data
+            .map((s: string) => s.replace(/\.json$/, ''))
+            .filter((s: string) => !s.startsWith('רשי על') && !s.startsWith('תוספות על'));
+          setSources(cleanSources);
+          if (!selectedSource) setSelectedSource(cleanSources[0]);
+        }
+      })
+      .catch(err => console.log('Standalone mode or data not generated yet'));
+  }, []);
 
   useEffect(() => {
     if (selectedSource && !localSource) {
       if (sourceCache[selectedSource]) {
         setSourceContent(sourceCache[selectedSource]);
       } else {
-        if (isDesktop) {
-          // Desktop mode: read from bundled resources
-          invoke<string>("get_resource_path").then(resourcePath => {
-            const filePath = `${resourcePath}/sources/${selectedSource}`;
-            readTextFile(filePath).then(data => {
-              setSourceContent(data);
-              setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
-            }).catch(err => console.error('Error reading source file:', err));
-          });
-        } else {
-          // Web mode: fetch from API
-          fetch(`/api/sources/${selectedSource}`)
-            .then(res => res.text())
-            .then(data => {
-              setSourceContent(data);
-              setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
-            })
-            .catch(err => console.error('Error fetching source:', err));
-        }
+        fetch(`/data/${selectedSource}.json`)
+          .then(res => res.json())
+          .then(data => {
+            setSourceContent(data);
+            setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
+          })
+          .catch(err => console.error('Error fetching source:', err));
       }
+
+      // Pre-fetch commentaries
+      const rashiName = `רשי על ${selectedSource}`;
+      const tosafotName = `תוספות על ${selectedSource}`;
+      
+      [rashiName, tosafotName].forEach(name => {
+        if (!sourceCache[name]) {
+          fetch(`/data/${name}.json`)
+            .then(res => res.json())
+            .then(data => {
+              setSourceCache(prev => ({ ...prev, [name]: data }));
+            })
+            .catch(() => {
+              // Commentary might not exist for this source
+            });
+        }
+      });
     }
-  }, [selectedSource, localSource, sourceCache, isDesktop]);
+  }, [selectedSource, localSource, sourceCache]);
 
   const currentFileContent = loadedFiles[previewIdx]?.content;
 
@@ -444,13 +281,14 @@ const App: React.FC = () => {
       return { sections: sectionsCache[fullTargetName], prefix, matchingSection, type: currentType, targetName: shortTargetName };
     }
     
-    const content = sourceCache[fullTargetName] || sourceCache[fullTargetName + ".txt"];
+    const content = sourceCache[fullTargetName];
     if (content) {
       const parsed = parseSections(content);
       sectionsCache[fullTargetName] = parsed;
       const matchingSection = parsed.find((s: any) => s.header === currentHeader);
       return { sections: parsed, prefix, matchingSection, type: currentType, targetName: shortTargetName };
     }
+
     return { sections: null, prefix, matchingSection: null, type: currentType, targetName: shortTargetName };
   }, [sourceCache, parseSections]);
 
@@ -1311,13 +1149,6 @@ const App: React.FC = () => {
             label="הדגשה באמצעות השוואה" 
             onClick={() => { setActiveTab('highlight_fuzzy'); setIsModalOpen(true); }} 
           />
-          <button
-            onClick={() => setIsDbModalOpen(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 text-right text-slate-600 hover:bg-blue-50 hover:text-blue-600"
-          >
-            <Globe size={18} />
-            <span className="font-semibold text-sm">בחירת קבצים מהתקנה</span>
-          </button>
         </nav>
 
         <div className="p-4 border-t border-slate-100">
@@ -1338,16 +1169,6 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex gap-2">
-             {user ? (
-               <div className="flex items-center gap-2 ml-4">
-                 <img src={user.photoURL || ''} className="w-8 h-8 rounded-full border border-slate-200" referrerPolicy="no-referrer" />
-                 <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-red-600">התנתק</button>
-               </div>
-             ) : (
-               <button onClick={handleLogin} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg transition-colors text-sm font-bold ml-4">
-                 התחבר עם Google
-               </button>
-             )}
              <button 
                 onClick={undo}
                 disabled={history.length === 0}
@@ -1677,77 +1498,6 @@ const App: React.FC = () => {
                 >
                   אשר והדגש
                 </button>
-              </div>
-            </div>
-          </Modal>
-
-          <Modal
-            isOpen={isDbModalOpen}
-            onClose={() => setIsDbModalOpen(false)}
-            title="בחירת קבצים מהתקנה"
-            icon={Folder}
-          >
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-bold text-slate-700 block mb-2">בחר קטגוריה (תיקייה ראשית)</label>
-                  <select 
-                    value={selectedFolder}
-                    onChange={(e) => setSelectedFolder(e.target.value)}
-                    className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">בחר תיקייה...</option>
-                    {folders.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-
-                {selectedFolder && (
-                  <div>
-                    <label className="text-sm font-bold text-slate-700 block mb-2">בחר ספר (תיקיית משנה)</label>
-                    <select 
-                      value={selectedSubfolder}
-                      onChange={(e) => setSelectedSubfolder(e.target.value)}
-                      className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">בחר תיקיית משנה...</option>
-                      {subfolders.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-4">
-                <button 
-                  onClick={handleLoadSubfolder}
-                  disabled={!selectedSubfolder || isProcessing}
-                  className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg disabled:bg-slate-300 flex items-center justify-center gap-2"
-                >
-                  {isProcessing ? (
-                    <>
-                      <RefreshCw className="animate-spin" size={20} />
-                      טוען...
-                    </>
-                  ) : (
-                    <>
-                      <Download size={20} />
-                      טען והשווה (זיהוי מקור אוטומטי)
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                {selectedFolder && (
-                  <button 
-                    onClick={() => {
-                      const name = prompt("שם תיקיית המשנה החדשה:");
-                      if (name) createSubfolder(name);
-                    }}
-                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                  >
-                    <Plus size={12} /> הוסף תיקיית משנה
-                  </button>
-                )}
               </div>
             </div>
           </Modal>
