@@ -30,20 +30,34 @@ function convert() {
     return;
   }
 
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+  if (fs.existsSync(outputDir)) {
+    fs.rmSync(outputDir, { recursive: true, force: true });
   }
+  fs.mkdirSync(outputDir, { recursive: true });
 
   const files = getFilesRecursively(sourcesDir);
-  const sourceNames = [];
+  const categories = {}; // { categoryName: [sourceNameWithTxt, ...] }
 
   files.forEach(fileInfo => {
     const content = fs.readFileSync(fileInfo.path, 'utf-8');
-    const relativePath = fileInfo.name;
+    const relativePath = fileInfo.name; // e.g. "תנך/בראשית.txt" or "בראשית.txt"
+    
+    const pathParts = relativePath.split(path.sep);
+    let category = "כללי";
+    let fileName = relativePath;
+    
+    if (pathParts.length > 1) {
+      category = pathParts[0];
+    }
+
     const cleanName = relativePath.replace(/\.txt$/, '');
     const jsPath = path.join(outputDir, cleanName + '.js');
     
-    sourceNames.push(cleanName);
+    if (!categories[category]) {
+      categories[category] = [];
+    }
+    // Add with .txt extension as requested
+    categories[category].push(cleanName + ".txt");
 
     // Ensure the directory for the JS file exists
     const jsDir = path.dirname(jsPath);
@@ -57,10 +71,10 @@ function convert() {
     console.log(`Converted ${fileInfo.name} -> ${cleanName}.js`);
   });
 
-  // Generate sources.js
-  const sourcesJsContent = `window.appSources = ${JSON.stringify(sourceNames)};`;
+  // Generate sources.js with category structure
+  const sourcesJsContent = `window.appCategories = ${JSON.stringify(categories)};`;
   fs.writeFileSync(path.join(outputDir, 'sources.js'), sourcesJsContent);
-  console.log(`Generated sources.js with ${sourceNames.length} entries.`);
+  console.log(`Generated sources.js with ${Object.keys(categories).length} categories.`);
 
   console.log(`Finished converting ${files.length} files.`);
 }

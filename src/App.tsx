@@ -22,6 +22,7 @@ import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
 declare global {
   interface Window {
     appSources?: string[];
+    appCategories?: Record<string, string[]>;
     appData?: Record<string, string>;
   }
 }
@@ -85,6 +86,8 @@ const App: React.FC = () => {
   const [sourceSections, setSourceSections] = useState<{ header: string, fullHeader: string, words: { text: string, lineIdx: number }[] }[]>([]);
 
   // Highlighting States
+  const [categories, setCategories] = useState<Record<string, string[]>>({});
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [sources, setSources] = useState<string[]>([]);
   const [selectedSource, setSelectedSource] = useState<string>('');
   const [sourceCache, setSourceCache] = useState<Record<string, string>>({});
@@ -124,10 +127,22 @@ const App: React.FC = () => {
       console.log('Initializing sources from data/sources.js...');
       try {
         await loadExternalScript('data/sources.js');
-        if (window.appSources && Array.isArray(window.appSources)) {
+        if (window.appCategories) {
+          console.log('Loaded categories:', window.appCategories);
+          setCategories(window.appCategories);
+          const firstCat = Object.keys(window.appCategories)[0];
+          if (firstCat) {
+            setSelectedCategory(firstCat);
+            const catSources = window.appCategories[firstCat];
+            setSources(catSources);
+            if (catSources.length > 0) {
+              setSelectedSource(catSources[0]);
+            }
+          }
+        } else if (window.appSources && Array.isArray(window.appSources)) {
+          // Fallback for flat structure
           const cleanSources = window.appSources
             .filter((s: string) => !s.startsWith('רשי על') && !s.startsWith('תוספות על'));
-          console.log('Loaded sources:', cleanSources);
           setSources(cleanSources);
           if (cleanSources.length > 0) {
             setSelectedSource(prev => prev || cleanSources[0]);
@@ -140,30 +155,44 @@ const App: React.FC = () => {
     initSources();
   }, []);
 
+  // Update sources when category changes
+  useEffect(() => {
+    if (selectedCategory && categories[selectedCategory]) {
+      const catSources = categories[selectedCategory];
+      setSources(catSources);
+      if (!catSources.includes(selectedSource)) {
+        setSelectedSource(catSources[0] || '');
+      }
+    }
+  }, [selectedCategory, categories]);
+
   useEffect(() => {
     const loadContent = async () => {
       if (selectedSource && !localSource) {
         console.log(`Loading content for source: ${selectedSource}`);
         
-        if (sourceCache[selectedSource]) {
-          console.log(`Using cached content for: ${selectedSource}`);
-          setSourceContent(sourceCache[selectedSource]);
+        // Strip .txt for internal keys
+        const cleanName = selectedSource.replace(/\.txt$/, '');
+        
+        if (sourceCache[cleanName]) {
+          console.log(`Using cached content for: ${cleanName}`);
+          setSourceContent(sourceCache[cleanName]);
         } else {
           try {
-            await loadExternalScript(`data/${selectedSource}.js`);
-            if (window.appData && window.appData[selectedSource]) {
-              const content = window.appData[selectedSource];
+            await loadExternalScript(`data/${cleanName}.js`);
+            if (window.appData && window.appData[cleanName]) {
+              const content = window.appData[cleanName];
               setSourceContent(content);
-              setSourceCache(prev => ({ ...prev, [selectedSource]: content }));
+              setSourceCache(prev => ({ ...prev, [cleanName]: content }));
             }
           } catch (err) {
-            console.error(`Error loading source ${selectedSource}:`, err);
+            console.error(`Error loading source ${cleanName}:`, err);
           }
         }
 
         // Pre-fetch/load commentaries
-        const rashiName = `רשי על ${selectedSource}`;
-        const tosafotName = `תוספות על ${selectedSource}`;
+        const rashiName = `רשי על ${cleanName}`;
+        const tosafotName = `תוספות על ${cleanName}`;
         
         for (const name of [rashiName, tosafotName]) {
           if (!sourceCache[name]) {
@@ -1485,6 +1514,17 @@ const App: React.FC = () => {
               <p className="text-slate-600">פעולה זו תסרוק את כל הקבצים הטעונים ותדגיש את תחילת הפסקה על ידי השוואה למקור נבחר.</p>
               
               <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-bold text-slate-700">בחר קטגוריה:</label>
+                </div>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-bold text-slate-700">בחר מקור להשוואה:</label>
                   <label className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded cursor-pointer hover:bg-blue-100 transition-colors">
