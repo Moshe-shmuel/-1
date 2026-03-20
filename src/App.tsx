@@ -71,7 +71,6 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<ProcessedFile[][]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('preview');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [previewIdx, setPreviewIdx] = useState(0);
   const [terminatorChar, setTerminatorChar] = useState('.:-');
@@ -93,6 +92,7 @@ const App: React.FC = () => {
   const [sourceCache, setSourceCache] = useState<Record<string, string>>({});
   const [sourceContent, setSourceContent] = useState<string>('');
   const [localSource, setLocalSource] = useState<string>('');
+  const [cursorLineIdx, setCursorLineIdx] = useState<number | null>(null);
 
   const activeSourceContent = localSource || sourceContent;
 
@@ -223,13 +223,6 @@ const App: React.FC = () => {
     });
   }, [loadedFiles]);
 
-  const addLog = (message: string, type: LogEntry['type'] = 'info') => {
-    setLogs(prev => [{
-      timestamp: new Date().toLocaleTimeString(),
-      message,
-      type
-    }, ...prev].slice(0, 50));
-  };
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -246,7 +239,6 @@ const App: React.FC = () => {
       });
     }
     setLoadedFiles(prev => [...prev, ...newFiles]);
-    addLog(`נטענו ${files.length} קבצים`, 'success');
   };
 
   const handleContentChange = (newContent: string) => {
@@ -263,6 +255,14 @@ const App: React.FC = () => {
       nextFiles[previewIdx] = { ...nextFiles[previewIdx], name: newName };
       setLoadedFiles(nextFiles);
     }
+  };
+
+  const updateCursorLine = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const textBeforeCursor = textarea.value.substring(0, textarea.selectionStart);
+    const lineIdx = textBeforeCursor.split('\n').length - 1;
+    setCursorLineIdx(lineIdx);
   };
 
   const parseSections = useCallback((content: string) => {
@@ -372,7 +372,6 @@ const App: React.FC = () => {
     const previousState = history[0];
     setHistory(history.slice(1));
     setLoadedFiles(previousState);
-    addLog("פעולה אחרונה בוטלה", 'info');
   };
 
   const insertTag = (openTag: string, closeTag: string = '') => {
@@ -488,7 +487,6 @@ const App: React.FC = () => {
       }
 
       setLoadedFiles(nextFiles);
-      addLog("הדגשה באמצעות תוי סיום הושלמה", 'success');
       setIsModalOpen(false);
       setIsProcessing(false);
       setProcessingProgress(0);
@@ -497,7 +495,6 @@ const App: React.FC = () => {
 
   const processWithFuzzy = (mode: 'auto' | 'review' = 'auto') => {
     if (!activeSourceContent) {
-      addLog("יש לבחור מקור להשוואה", 'error');
       return;
     }
     if (loadedFiles.length === 0) return;
@@ -548,7 +545,6 @@ const App: React.FC = () => {
         if (finalHeaders.length > 0) {
           processHeaderGroup(0, groups, finalHeaders, sections);
         } else {
-          addLog("לא נמצאו פסקאות להדגשה", 'info');
           setIsProcessing(false);
         }
       } else {
@@ -803,7 +799,6 @@ const App: React.FC = () => {
         }
 
         setLoadedFiles(nextFiles);
-        addLog("הדגשה חכמה הושלמה", 'success');
         setIsModalOpen(false);
         setIsProcessing(false);
         setProcessingProgress(0);
@@ -1117,7 +1112,6 @@ const App: React.FC = () => {
       setReviewGroups({});
       setReviewHeaders([]);
       setCurrentReviewBatch([]);
-      addLog("תהליך אישור ההדגשות הושלם", 'success');
     }
   };
 
@@ -1266,12 +1260,19 @@ const App: React.FC = () => {
                 <Folder size={16} />
                 טען תיקייה
               </button>
+              <button 
+                onClick={downloadAll}
+                disabled={loadedFiles.length === 0}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg transition-colors text-sm font-bold disabled:opacity-30"
+              >
+                <Download size={16} />
+                הורד הכל (ZIP)
+              </button>
              <button 
                 onClick={() => {
                   if (loadedFiles.length === 0) return;
                   pushToHistory();
                   setLoadedFiles([]);
-                  addLog("כל הקבצים נוקו", "info");
                 }}
                 className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-bold mr-2"
               >
@@ -1358,12 +1359,64 @@ const App: React.FC = () => {
                   <textarea
                     ref={textareaRef}
                     value={loadedFiles[previewIdx]?.content || ''}
-                    onChange={(e) => handleContentChange(e.target.value)}
+                    onChange={(e) => {
+                      handleContentChange(e.target.value);
+                      updateCursorLine();
+                    }}
+                    onKeyUp={updateCursorLine}
+                    onClick={updateCursorLine}
+                    onFocus={updateCursorLine}
                     className="w-full h-full bg-white p-8 rounded-2xl border border-slate-200 font-sans text-lg leading-[1.6] text-slate-800 outline-none focus:ring-2 focus:ring-blue-400 resize-none overflow-auto shadow-inner"
                     dir="rtl"
                     placeholder="אין תוכן להצגה או עריכה"
                   />
                 </div>
+
+                {cursorLineIdx !== null && loadedFiles[previewIdx]?.links && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 shrink-0">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
+                        <Globe size={14} className="text-blue-500" />
+                        קישורים לשורה {cursorLineIdx + 1}
+                      </h4>
+                      <span className="text-[10px] text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-100 shadow-sm">
+                        {loadedFiles[previewIdx].links?.filter(l => l.line_index_1 === cursorLineIdx + 1).length || 0} קישורים נמצאו
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar">
+                      {loadedFiles[previewIdx].links
+                        ?.filter(link => link.line_index_1 === cursorLineIdx + 1)
+                        .map((link, i) => {
+                          const cleanPath = link.path_2.replace(/\.txt$/, '');
+                          const sourceText = sourceCache[cleanPath];
+                          const linkedLine = sourceText ? sourceText.split('\n')[link.line_index_2 - 1] : null;
+
+                          return (
+                            <div key={i} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs shadow-sm flex flex-col gap-2 hover:border-blue-300 transition-colors group">
+                              <div className="flex items-center justify-between">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-slate-700 group-hover:text-blue-700 transition-colors">{link.path_2}</span>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-blue-600 font-medium">{link.heRef_2 || 'ללא כותרת'}</span>
+                                    <span className="text-slate-300">•</span>
+                                    <span className="text-slate-400">שורה {link.line_index_2}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              {linkedLine && (
+                                <div className="p-2 bg-slate-50 rounded border border-slate-100 text-slate-600 italic line-clamp-2 text-[11px] leading-relaxed">
+                                  {linkedLine}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      {(!loadedFiles[previewIdx].links || loadedFiles[previewIdx].links.filter(l => l.line_index_1 === cursorLineIdx + 1).length === 0) && (
+                        <div className="text-xs text-slate-400 italic py-2">אין קישורים משויכים לשורה זו</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1588,35 +1641,6 @@ const App: React.FC = () => {
             </div>
           </Modal>
         </div>
-
-        <footer className="bg-white border-t border-slate-200 px-8 py-6 flex items-center gap-8 fixed bottom-0 left-0 right-0 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]" style={{ right: isSidebarOpen ? '288px' : '0' }}>
-          <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 h-20 overflow-y-auto">
-            {logs.length === 0 ? (
-              <div className="text-slate-400 text-xs mt-2 italic">ממתין לפעולות...</div>
-            ) : (
-              logs.map((log, i) => (
-                <div key={i} className={`text-xs mb-1 flex items-center gap-2 ${
-                  log.type === 'success' ? 'text-green-600' : 
-                  log.type === 'error' ? 'text-red-600' : 'text-slate-500'
-                }`}>
-                  <span className="font-mono text-[10px] opacity-60">[{log.timestamp}]</span>
-                  <span className="font-medium">{log.message}</span>
-                </div>
-              ))
-            )}
-          </div>
-          
-          <button 
-            disabled={loadedFiles.length === 0}
-            onClick={downloadAll}
-            className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-white transition-all shadow-xl shadow-blue-200 ${
-              loadedFiles.length === 0 ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700 hover:scale-105 active:scale-95'
-            }`}
-          >
-            <Download size={22} />
-            הורד הכל ב-ZIP
-          </button>
-        </footer>
       </main>
     </div>
   );
