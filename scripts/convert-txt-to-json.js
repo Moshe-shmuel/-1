@@ -40,25 +40,27 @@ function convert() {
   files.forEach(fileInfo => {
     const content = fs.readFileSync(fileInfo.path, 'utf-8');
     const relativePath = fileInfo.name;
-    const jsonRelativePath = relativePath.replace(/\.txt$/, '.json');
-    const jsonPath = path.join(outputDir, jsonRelativePath);
+    const cleanName = relativePath.replace(/\.txt$/, '');
+    const jsPath = path.join(outputDir, cleanName + '.js');
     
-    sourceNames.push(jsonRelativePath);
+    sourceNames.push(cleanName);
 
-    // Ensure the directory for the JSON file exists
-    const jsonDir = path.dirname(jsonPath);
-    if (!fs.existsSync(jsonDir)) {
-      fs.mkdirSync(jsonDir, { recursive: true });
+    // Ensure the directory for the JS file exists
+    const jsDir = path.dirname(jsPath);
+    if (!fs.existsSync(jsDir)) {
+      fs.mkdirSync(jsDir, { recursive: true });
     }
 
-    // Save as JSON string
-    fs.writeFileSync(jsonPath, JSON.stringify(content));
-    console.log(`Converted ${fileInfo.name} -> ${jsonRelativePath}`);
+    // Save as JS file that assigns to a global object
+    const jsContent = `window.appData = window.appData || {};\nwindow.appData["${cleanName}"] = ${JSON.stringify(content)};`;
+    fs.writeFileSync(jsPath, jsContent);
+    console.log(`Converted ${fileInfo.name} -> ${cleanName}.js`);
   });
 
-  // Generate sources.json
-  fs.writeFileSync(path.join(outputDir, 'sources.json'), JSON.stringify(sourceNames));
-  console.log(`Generated sources.json with ${sourceNames.length} entries.`);
+  // Generate sources.js
+  const sourcesJsContent = `window.appSources = ${JSON.stringify(sourceNames)};`;
+  fs.writeFileSync(path.join(outputDir, 'sources.js'), sourcesJsContent);
+  console.log(`Generated sources.js with ${sourceNames.length} entries.`);
 
   console.log(`Finished converting ${files.length} files.`);
 }

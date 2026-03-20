@@ -18,6 +18,14 @@ import {
 } from 'lucide-react';
 import { ProcessedFile, TabId, LogEntry, ReviewItem } from './types';
 
+// Extend window interface for global data
+declare global {
+  interface Window {
+    appSources?: string[];
+    appData?: Record<string, string>;
+  }
+}
+
 const NavButton = ({ id, icon: Icon, label, onClick }: { id: TabId, icon: any, label: string, onClick: (id: TabId) => void }) => (
   <button
     onClick={() => onClick(id)}
@@ -89,78 +97,90 @@ const App: React.FC = () => {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Helper to load external JS data
+  const loadExternalScript = (src: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = () => {
+        if (script.parentNode) {
+          script.parentNode.removeChild(script);
+        }
+        resolve();
+      };
+      script.onerror = () => {
+        if (script.parentNode) {
+          script.parentNode.removeChild(script);
+        }
+        reject(new Error(`Failed to load script: ${src}`));
+      };
+      document.head.appendChild(script);
+    });
+  };
+
   useEffect(() => {
-    console.log('Fetching sources from data/sources.json...');
-    fetch('data/sources.json')
-      .then(res => {
-        console.log('Fetch response status:', res.status);
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
-      })
-      .then(data => {
-        console.log('Raw fetched sources data:', data);
-        if (Array.isArray(data) && data.length > 0) {
-          const cleanSources = data
-            .map((s: string) => s.replace(/\.json$/, ''))
+    const initSources = async () => {
+      console.log('Initializing sources from data/sources.js...');
+      try {
+        await loadExternalScript('data/sources.js');
+        if (window.appSources && Array.isArray(window.appSources)) {
+          const cleanSources = window.appSources
             .filter((s: string) => !s.startsWith('רשי על') && !s.startsWith('תוספות על'));
-          console.log('Filtered sources:', cleanSources);
+          console.log('Loaded sources:', cleanSources);
           setSources(cleanSources);
           if (cleanSources.length > 0) {
             setSelectedSource(prev => prev || cleanSources[0]);
           }
-        } else {
-          console.warn('Fetched sources data is not a non-empty array:', data);
         }
-      })
-      .catch(err => {
-        console.error('Error fetching sources:', err);
-        setSources([]);
-      });
+      } catch (e) {
+        console.warn('Could not load data/sources.js, checking for manual upload.');
+      }
+    };
+    initSources();
   }, []);
 
   useEffect(() => {
-    if (selectedSource && !localSource) {
-      console.log(`Fetching content for source: ${selectedSource}`);
-      if (sourceCache[selectedSource]) {
-        console.log(`Using cached content for: ${selectedSource}`);
-        setSourceContent(sourceCache[selectedSource]);
-      } else {
-        fetch(`data/${encodeURIComponent(selectedSource)}.json`)
-          .then(res => {
-            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-            return res.json();
-          })
-          .then(data => {
-            console.log(`Successfully fetched content for: ${selectedSource}`);
-            setSourceContent(data);
-            setSourceCache(prev => ({ ...prev, [selectedSource]: data }));
-          })
-          .catch(err => console.error(`Error fetching source ${selectedSource}:`, err));
-      }
-
-      // Pre-fetch commentaries
-      const rashiName = `רשי על ${selectedSource}`;
-      const tosafotName = `תוספות על ${selectedSource}`;
-      
-      [rashiName, tosafotName].forEach(name => {
-        if (!sourceCache[name]) {
-          console.log(`Pre-fetching commentary: ${name}`);
-          fetch(`data/${encodeURIComponent(name)}.json`)
-            .then(res => {
-              if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-              return res.json();
-            })
-            .then(data => {
-              console.log(`Successfully pre-fetched commentary: ${name}`);
-              setSourceCache(prev => ({ ...prev, [name]: data }));
-            })
-            .catch(() => {
-              // Commentary might not exist for this source
-              console.log(`Commentary ${name} not found or failed to fetch.`);
-            });
+    const loadContent = async () => {
+      if (selectedSource && !localSource) {
+        console.log(`Loading content for source: ${selectedSource}`);
+        
+        if (sourceCache[selectedSource]) {
+          console.log(`Using cached content for: ${selectedSource}`);
+          setSourceContent(sourceCache[selectedSource]);
+        } else {
+          try {
+            await loadExternalScript(`data/${selectedSource}.js`);
+            if (window.appData && window.appData[selectedSource]) {
+              const content = window.appData[selectedSource];
+              setSourceContent(content);
+              setSourceCache(prev => ({ ...prev, [selectedSource]: content }));
+            }
+          } catch (err) {
+            console.error(`Error loading source ${selectedSource}:`, err);
+          }
         }
-      });
-    }
+
+        // Pre-fetch/load commentaries
+        const rashiName = `רשי על ${selectedSource}`;
+        const tosafotName = `תוספות על ${selectedSource}`;
+        
+        for (const name of [rashiName, tosafotName]) {
+          if (!sourceCache[name]) {
+            try {
+              await loadExternalScript(`data/${name}.js`);
+              if (window.appData && window.appData[name]) {
+                const content = window.appData[name];
+                setSourceCache(prev => ({ ...prev, [name]: content }));
+              }
+            } catch (e) {
+              // Ignore errors for optional commentaries
+            }
+          }
+        }
+      }
+    };
+    loadContent();
   }, [selectedSource, localSource, sourceCache]);
 
   const currentFileContent = loadedFiles[previewIdx]?.content;
