@@ -24,22 +24,20 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Rust cache
-      uses: swatinem/rust-cache@v2
-      with:
-        workspaces: './src-tauri -> target'
-
     - name: Install dependencies
       run: npm install
 
+    # זה השלב שחייב להצליח כדי שה-EXE לא יקרוס
+    - name: Build Frontend
+      run: npm run build 
+
     - name: Build Tauri App
-      uses: tauri-apps/tauri-action@v0
+      uses: tauri-apps/tauri-action@v0 # זו הגרסה הנכונה והקיימת
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tagName: v__VERSION__
         releaseName: "Highlight App v__VERSION__"
-        releaseBody: "Automated release from GitHub Actions"
         releaseDraft: true
         prerelease: false
 
