@@ -726,7 +726,7 @@ const App: React.FC = () => {
                   lastMainLinkData = null;
 
                   // Link 2: To the main source (Gemara) - only if we switched sources
-                  if (targetInfo) {
+                  if (targetInfo && targetInfo.type !== null) {
                     // Search for the same words in the main source
                     let mainBestIdx = -1;
                     let mainBestScore = -Infinity;
@@ -957,7 +957,7 @@ const App: React.FC = () => {
         let mainSourceHeader = "";
 
         if (maxMatchCount >= 1) {
-          if (targetInfo) {
+          if (targetInfo && targetInfo.type !== null) {
             // Search in main source too
             let mainBestIdx = -1;
             let mainBestScore = -Infinity;
@@ -1390,7 +1390,8 @@ const App: React.FC = () => {
                         ?.filter(link => link.line_index_1 === cursorLineIdx + 1)
                         .map((link, i) => {
                           const cleanPath = link.path_2.replace(/\.txt$/, '');
-                          const sourceText = sourceCache[cleanPath];
+                          const baseSourceName = selectedSource.replace(/\.[^/.]+$/, "");
+                          const sourceText = sourceCache[cleanPath] || (cleanPath === baseSourceName ? activeSourceContent : null);
                           const linkedLine = sourceText ? sourceText.split('\n')[link.line_index_2 - 1] : null;
 
                           return (
