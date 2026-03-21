@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "prebuild": "node scripts/convert-txt-to-json.js",
-    "build": "vite build && node scripts/postbuild.js",
+    "build": "vite build",
+    "build:portable": "npm run build && node scripts/postbuild.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
