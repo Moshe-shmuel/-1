@@ -325,7 +325,7 @@ const App: React.FC = () => {
   }, []);
 
   const getTargetSections = useCallback((p: string, baseSourceName: string, currentHeader: string, sectionsCache: Record<string, any[]>, lastType: 'tosafot' | 'rashi' | null) => {
-    const prefixMatch = p.match(/^(תוס' ד"ה|תוד"ה|תוספות|רשד"ה|רש"י ד"ה|רש"י|פירש"י\s+ב?ד"ה|פרש"י\s+ב?ד"ה|ו?ב?תוספות\s+ב?ד"ה|ו?ב?תוס'\s+ב?ד"ה|שם\s+ב?ד"ה|ב?ד"ה|ד"ה|בא"ד|באו"ד)\s+/);
+    const prefixMatch = p.match(/^(תוס' ד"ה|תוד"ה|תוספות|רשד"ה|רש"י ד"ה|רש"י|פירש"י\s+ב?ד"ה|פרש"י\s+ב?ד"ה|ו?ב?תוספות\s+ב?ד"ה|ו?ב?תוס'\s+ב?ד"ה|שם\s+ב?ד"ה|ב?ד"ה|ד"ה|בא"ד|באו"ד|בגמרא|בגמ'|גמרא|גמ')(\s+|$)/);
     if (!prefixMatch) return null;
     
     const prefix = prefixMatch[1];
@@ -340,6 +340,8 @@ const App: React.FC = () => {
       currentType = 'tosafot';
     } else if (prefix.includes('רש')) {
       currentType = 'rashi';
+    } else if (prefix.includes('גמ')) {
+      currentType = null; // Explicitly Gemara (main source)
     } else {
       // Generic prefix (ד"ה, שם בד"ה etc.) - inherit from last known type
       currentType = lastType;
@@ -1282,8 +1284,8 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <div className="flex-1 overflow-hidden p-8 pb-32 flex flex-col">
-          <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-0">
+        <div className="flex-1 overflow-hidden p-4 flex flex-col">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-0">
             <div className="flex items-center justify-between mb-6 shrink-0">
               <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <Eye className="text-blue-500" /> עורך טקסט
@@ -1366,7 +1368,7 @@ const App: React.FC = () => {
                     onKeyUp={updateCursorLine}
                     onClick={updateCursorLine}
                     onFocus={updateCursorLine}
-                    className="w-full h-full bg-white p-8 rounded-2xl border border-slate-200 font-sans text-lg leading-[1.6] text-slate-800 outline-none focus:ring-2 focus:ring-blue-400 resize-none overflow-auto shadow-inner"
+                    className="w-full h-full bg-white p-6 rounded-2xl border border-slate-200 font-sans text-lg leading-[1.6] text-slate-800 outline-none focus:ring-2 focus:ring-blue-400 resize-none overflow-auto shadow-inner"
                     dir="rtl"
                     placeholder="אין תוכן להצגה או עריכה"
                   />
@@ -1383,7 +1385,7 @@ const App: React.FC = () => {
                         {loadedFiles[previewIdx].links?.filter(l => l.line_index_1 === cursorLineIdx + 1).length || 0} קישורים נמצאו
                       </span>
                     </div>
-                    <div className="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar">
+                    <div className="flex flex-col gap-4 max-h-[400px] overflow-y-auto custom-scrollbar p-1">
                       {loadedFiles[previewIdx].links
                         ?.filter(link => link.line_index_1 === cursorLineIdx + 1)
                         .map((link, i) => {
@@ -1392,20 +1394,26 @@ const App: React.FC = () => {
                           const linkedLine = sourceText ? sourceText.split('\n')[link.line_index_2 - 1] : null;
 
                           return (
-                            <div key={i} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs shadow-sm flex flex-col gap-2 hover:border-blue-300 transition-colors group">
-                              <div className="flex items-center justify-between">
+                            <div key={i} className="px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs shadow-sm flex flex-col gap-3 hover:border-blue-300 transition-all group hover:shadow-md">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-1">
                                 <div className="flex flex-col">
-                                  <span className="font-bold text-slate-700 group-hover:text-blue-700 transition-colors">{link.path_2}</span>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-blue-600 font-medium">{link.heRef_2 || 'ללא כותרת'}</span>
-                                    <span className="text-slate-300">•</span>
-                                    <span className="text-slate-400">שורה {link.line_index_2}</span>
+                                  <div className="flex items-center gap-2">
+                                    <FileText size={14} className="text-blue-500" />
+                                    <span className="font-bold text-slate-800 group-hover:text-blue-700 transition-colors text-[13px]">{link.path_2}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1.5">
+                                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-blue-100">{link.heRef_2 || 'ללא כותרת'}</span>
+                                    <span className="text-slate-400 text-[10px] font-medium">שורה {link.line_index_2}</span>
                                   </div>
                                 </div>
                               </div>
-                              {linkedLine && (
-                                <div className="p-2 bg-slate-50 rounded border border-slate-100 text-slate-600 italic line-clamp-2 text-[11px] leading-relaxed">
+                              {linkedLine ? (
+                                <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-100 text-slate-700 text-[13px] leading-relaxed font-medium shadow-inner overflow-hidden whitespace-pre-wrap">
                                   {linkedLine}
+                                </div>
+                              ) : (
+                                <div className="p-3 text-[11px] text-slate-400 italic bg-slate-50/30 rounded-xl border border-dashed border-slate-200 text-center">
+                                  תוכן השורה אינו זמין בתצוגה מקדימה (נסה לטעון את המקור שוב)
                                 </div>
                               )}
                             </div>
@@ -1587,8 +1595,11 @@ const App: React.FC = () => {
                       if (file) {
                         const reader = new FileReader();
                         reader.onload = (event) => {
-                          setLocalSource(event.target?.result as string);
+                          const content = event.target?.result as string;
+                          setLocalSource(content);
                           setSelectedSource(file.name);
+                          const cleanName = file.name.replace(/\.txt$/, '');
+                          setSourceCache(prev => ({ ...prev, [cleanName]: content }));
                         };
                         reader.readAsText(file);
                       }
