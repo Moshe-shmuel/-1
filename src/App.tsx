@@ -325,7 +325,7 @@ const App: React.FC = () => {
   }, []);
 
   const getTargetSections = useCallback((p: string, baseSourceName: string, currentHeader: string, sectionsCache: Record<string, any[]>, lastType: 'tosafot' | 'rashi' | null) => {
-    const prefixMatch = p.match(/^(תוס' ד"ה|תוד"ה|תוספות|רשד"ה|רש"י ד"ה|רש"י|פירש"י\s+ב?ד"ה|פרש"י\s+ב?ד"ה|ו?ב?תוספות\s+ב?ד"ה|ו?ב?תוס'\s+ב?ד"ה|שם\s+ב?ד"ה|ב?ד"ה|ד"ה|בא"ד|באו"ד)\s+/);
+    const prefixMatch = p.match(/^(תוס' ד"ה|תוד"ה|תוספות|רשד"ה|רש"י ד"ה|רש"י|פירש"י\s+ב?ד"ה|פרש"י\s+ב?ד"ה|ו?ב?תוספות\s+ב?ד"ה|ו?ב?תוס'\s+ב?ד"ה|שם\s+ב?ד"ה|ב?ד"ה|ד"ה|בא"ד|באו"ד|בגמרא|בגמ'|גמרא|גמ')(\s+|$)/);
     if (!prefixMatch) return null;
     
     const prefix = prefixMatch[1];
@@ -340,6 +340,8 @@ const App: React.FC = () => {
       currentType = 'tosafot';
     } else if (prefix.includes('רש')) {
       currentType = 'rashi';
+    } else if (prefix.includes('גמ')) {
+      currentType = null; // Explicitly Gemara (main source)
     } else {
       // Generic prefix (ד"ה, שם בד"ה etc.) - inherit from last known type
       currentType = lastType;
