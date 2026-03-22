@@ -1286,34 +1286,6 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-hidden p-4 flex flex-col">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-0">
-            <div className="flex items-center justify-between mb-6 shrink-0">
-              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <Eye className="text-blue-500" /> עורך טקסט
-              </h3>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                  <span className="text-xs font-bold text-slate-500">שם קובץ:</span>
-                  <input 
-                    type="text"
-                    value={loadedFiles[previewIdx]?.name || ''}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    className="bg-white border border-slate-200 rounded px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 w-48"
-                  />
-                </div>
-                <select 
-                  value={previewIdx} 
-                  onChange={e => setPreviewIdx(Number(e.target.value))}
-                  className="p-3 border border-slate-200 rounded-xl text-sm min-w-[200px] outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  {loadedFiles.length === 0 ? (
-                    <option>אין קבצים טעונים</option>
-                  ) : (
-                    loadedFiles.map((f, i) => <option key={i} value={i}>{f.name}</option>)
-                  )}
-                </select>
-              </div>
-            </div>
-
             <div className="flex gap-6 flex-1 min-h-0">
               <aside className="w-64 border border-slate-200 rounded-xl bg-slate-50 overflow-y-auto p-4 flex flex-col gap-1 shrink-0">
                 <div className="text-xs font-bold text-slate-400 mb-2 border-b border-slate-200 pb-2">ניווט כותרות</div>
@@ -1332,28 +1304,45 @@ const App: React.FC = () => {
               </aside>
 
               <div className="flex-1 flex flex-col min-h-0 h-full gap-4">
-                <div className="flex flex-wrap items-center gap-1 p-2 bg-slate-50 border border-slate-200 rounded-xl shrink-0">
-                  <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
-                    {['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].map(h => (
-                      <button
-                        key={h}
-                        onClick={() => insertTag(`<${h.toLowerCase()}>`, `</${h.toLowerCase()}>`)}
-                        className="px-2 py-1 text-[10px] font-bold bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                      >
-                        {h}
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl shrink-0">
+                  <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
+                      {['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].map(h => (
+                        <button
+                          key={h}
+                          onClick={() => insertTag(`<${h.toLowerCase()}>`, `</${h.toLowerCase()}>`)}
+                          className="px-2 py-1 text-[10px] font-bold bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                        >
+                          {h}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
+                      <button onClick={() => insertTag('<b>', '</b>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="מודגש">
+                        <Bold size={14} />
                       </button>
-                    ))}
+                      <button onClick={() => insertTag('<i>', '</i>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="נטוי">
+                        <Italic size={14} />
+                      </button>
+                      <button onClick={() => insertTag('<u>', '</u>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="קו תחתון">
+                        <Underline size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
-                    <button onClick={() => insertTag('<b>', '</b>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="מודגש">
-                      <Bold size={14} />
-                    </button>
-                    <button onClick={() => insertTag('<i>', '</i>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="נטוי">
-                      <Italic size={14} />
-                    </button>
-                    <button onClick={() => insertTag('<u>', '</u>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="קו תחתון">
-                      <Underline size={14} />
-                    </button>
+
+                  <div className="flex items-center gap-2 px-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">קובץ:</span>
+                    <select 
+                      value={previewIdx} 
+                      onChange={e => setPreviewIdx(Number(e.target.value))}
+                      className="p-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[160px]"
+                    >
+                      {loadedFiles.length === 0 ? (
+                        <option>אין קבצים טעונים</option>
+                      ) : (
+                        loadedFiles.map((f, i) => <option key={i} value={i}>{f.name}</option>)
+                      )}
+                    </select>
                   </div>
                 </div>
 
