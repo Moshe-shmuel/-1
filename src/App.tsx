@@ -211,6 +211,35 @@ const App: React.FC = () => {
     loadContent();
   }, [selectedSource, localSource]);
 
+  // Load missing sources for link previews based on cursor position
+  useEffect(() => {
+    const loadMissingSources = async () => {
+      if (cursorLineIdx === null || !loadedFiles[previewIdx]?.links) return;
+      
+      const currentLinks = loadedFiles[previewIdx].links.filter(l => l.line_index_1 === cursorLineIdx + 1);
+      const missingPaths = ([...new Set(currentLinks.map(l => l.path_2.replace(/\.[^/.]+$/, "")))] as string[]).filter(p => !(p in sourceCache));
+      
+      if (missingPaths.length === 0) return;
+      
+      for (const cleanName of missingPaths) {
+        try {
+          await loadExternalScript(`data/${cleanName}.js`);
+          if (window.appData && window.appData[cleanName]) {
+            const content = window.appData[cleanName];
+            setSourceCache(prev => ({ ...prev, [cleanName]: content }));
+          } else {
+            setSourceCache(prev => ({ ...prev, [cleanName]: null as any }));
+          }
+        } catch (err) {
+          console.error(`Error loading missing source ${cleanName}:`, err);
+          setSourceCache(prev => ({ ...prev, [cleanName]: null as any }));
+        }
+      }
+    };
+    
+    loadMissingSources();
+  }, [cursorLineIdx, previewIdx, loadedFiles, sourceCache]);
+
   const currentFileContent = loadedFiles[previewIdx]?.content;
 
   const pushToHistory = useCallback(() => {
@@ -323,7 +352,8 @@ const App: React.FC = () => {
     return sections;
   }, []);
 
-  const getTargetSections = useCallback((p: string, baseSourceName: string, currentHeader: string, sectionsCache: Record<string, any[]>, lastType: 'tosafot' | 'rashi' | null) => {
+  const getTargetSections = useCallback((p: string, baseSourceNameWithExt: string, currentHeader: string, sectionsCache: Record<string, any[]>, lastType: 'tosafot' | 'rashi' | null) => {
+    const baseSourceName = baseSourceNameWithExt.replace(/\.[^/.]+$/, "");
     const prefixMatch = p.match(/^(תוס' ד"ה|תוד"ה|תוספות|רשד"ה|רש"י ד"ה|רש"י|פירש"י\s+ב?ד"ה|פרש"י\s+ב?ד"ה|ו?ב?תוספות\s+ב?ד"ה|ו?ב?תוס'\s+ב?ד"ה|שם\s+ב?ד"ה|ב?ד"ה|ד"ה|בא"ד|באו"ד|בגמרא|בגמ'|גמרא|גמ')(\s+|$)/);
     if (!prefixMatch) return null;
     
@@ -1422,7 +1452,10 @@ const App: React.FC = () => {
                         .map((link, i) => {
                           const cleanPath = link.path_2.replace(/\.[^/.]+$/, "");
                           const baseSourceName = selectedSource.replace(/\.[^/.]+$/, "");
-                          const sourceText = sourceCache[cleanPath] || (cleanPath === baseSourceName ? activeSourceContent : null);
+                          const loadedFile = loadedFiles.find(f => f.name === cleanPath);
+                          const sourceText = sourceCache[cleanPath] || 
+                                            (cleanPath === baseSourceName ? activeSourceContent : null) ||
+                                            (loadedFile ? loadedFile.content : null);
                           const linkedLine = sourceText ? sourceText.split('\n')[link.line_index_2 - 1] : null;
 
                           return (
@@ -1441,7 +1474,7 @@ const App: React.FC = () => {
                                 </div>
                               ) : (
                                 <div className="p-3 text-[11px] text-slate-400 italic bg-slate-50/30 rounded-xl border border-dashed border-slate-200 text-center">
-                                  תוכן השורה אינו זמין בתצוגה מקדימה (נסה לטעון את המקור שוב)
+                                  {!(cleanPath in sourceCache) ? 'טוען תוכן מקור...' : 'תוכן השורה אינו זמין בתצוגה מקדימה'}
                                 </div>
                               )}
                             </div>
