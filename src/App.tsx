@@ -264,7 +264,7 @@ const App: React.FC = () => {
     setCursorLineIdx(lineIdx);
   };
 
-  const parseSections = useCallback((content: string, sourceName?: string) => {
+  const parseSections = useCallback((content: string) => {
     const explode = (text: string, startLine: number) => {
       const lines = text.split('\n');
       return lines.flatMap((line, i) => {
@@ -277,8 +277,6 @@ const App: React.FC = () => {
     const sections: { header: string, fullHeader: string, words: { text: string, lineIdx: number }[] }[] = [];
     const headerRegex = /<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gi;
     
-    const cleanSourceName = sourceName ? sourceName.replace(/\.[^/.]+$/, "") : "";
-    
     let firstMatch = headerRegex.exec(content);
     headerRegex.lastIndex = 0; 
     
@@ -286,13 +284,13 @@ const App: React.FC = () => {
       const initialContent = content.substring(0, firstMatch.index);
       sections.push({ 
         header: "_initial_", 
-        fullHeader: cleanSourceName,
+        fullHeader: "",
         words: explode(initialContent, 1) 
       });
     } else if (!firstMatch) {
       sections.push({ 
         header: "_initial_", 
-        fullHeader: cleanSourceName,
+        fullHeader: "",
         words: explode(content, 1) 
       });
     }
@@ -306,12 +304,7 @@ const App: React.FC = () => {
       
       currentHierarchy[level - 1] = rawHeaderText;
       for (let i = level; i < 6; i++) currentHierarchy[i] = '';
-      
-      // Build hierarchy path, prepending source name if it's not already the first part
-      let hierarchyPath = currentHierarchy.filter(h => h).join(' ');
-      if (cleanSourceName && !hierarchyPath.startsWith(cleanSourceName)) {
-        hierarchyPath = hierarchyPath ? `${cleanSourceName} ${hierarchyPath}` : cleanSourceName;
-      }
+      const hierarchyPath = currentHierarchy.filter(h => h).join(' ');
 
       const start = headerRegex.lastIndex;
       const currentPos = headerRegex.lastIndex;
@@ -366,7 +359,7 @@ const App: React.FC = () => {
     
     const content = sourceCache[fullTargetName];
     if (content) {
-      const parsed = parseSections(content, fullTargetName);
+      const parsed = parseSections(content);
       sectionsCache[fullTargetName] = parsed;
       const matchingSection = parsed.find((s: any) => s.header === currentHeader);
       return { sections: parsed, prefix, matchingSection, type: currentType, targetName: shortTargetName };
@@ -526,7 +519,7 @@ const App: React.FC = () => {
     setTimeout(async () => {
       if (mode === 'auto') pushToHistory();
 
-      const sections = parseSections(activeSourceContent, selectedSource);
+      const sections = parseSections(activeSourceContent);
       setSourceSections(sections);
 
       const sourceSectionsCache: Record<string, any[]> = { [selectedSource]: sections };
