@@ -332,7 +332,10 @@ const App: React.FC = () => {
       return { isSameAsPrevious: true, prefix, type: lastType, sections: null, matchingSection: null };
     }
 
-    let targetName = "";
+    // Identify the Gemara name and if the active file is a commentary
+    const gemaraName = baseSourceName.replace(/^(תוספות על |רשי על |רש"י על |ר"שי על )/, "");
+    const isActiveFileCommentary = baseSourceName !== gemaraName;
+
     let currentType: 'tosafot' | 'rashi' | null = null;
 
     if (prefix.includes('תוס') || prefix.includes('תוד')) {
@@ -342,15 +345,16 @@ const App: React.FC = () => {
     } else if (prefix.includes('גמ')) {
       currentType = null; // Explicitly Gemara (main source)
     } else {
-      // Generic prefix (ד"ה, שם בד"ה etc.) - inherit from last known type
-      currentType = lastType;
+      // Generic prefix (ד"ה, שם בד"ה etc.)
+      // If we are in a commentary file, default to Gemara (null)
+      // Unless we have a lastType that was explicitly set in this paragraph sequence
+      currentType = isActiveFileCommentary ? null : lastType;
     }
 
-    const shortBaseName = baseSourceName.split('/').pop() || baseSourceName;
-    const shortTargetName = currentType === 'tosafot' ? `תוספות על ${shortBaseName}` : `רשי על ${shortBaseName}`;
-    const fullTargetName = currentType === 'tosafot' ? `תוספות על ${baseSourceName}` : `רשי על ${baseSourceName}`;
+    const fullTargetName = !currentType ? gemaraName : (currentType === 'tosafot' ? `תוספות על ${gemaraName}` : `רשי על ${gemaraName}`);
+    const shortTargetName = fullTargetName.split('/').pop() || fullTargetName;
 
-    if (!currentType) return { sections: null, prefix, matchingSection: null, type: currentType, targetName: shortBaseName };
+    if (!currentType) return { sections: null, prefix, matchingSection: null, type: currentType, targetName: shortTargetName };
     
     if (sectionsCache[fullTargetName]) {
       const matchingSection = sectionsCache[fullTargetName].find((s: any) => s.header === currentHeader);
