@@ -264,7 +264,7 @@ const App: React.FC = () => {
     setCursorLineIdx(lineIdx);
   };
 
-  const parseSections = useCallback((content: string) => {
+  const parseSections = useCallback((content: string, sourceName?: string) => {
     const explode = (text: string, startLine: number) => {
       const lines = text.split('\n');
       return lines.flatMap((line, i) => {
@@ -277,6 +277,8 @@ const App: React.FC = () => {
     const sections: { header: string, fullHeader: string, words: { text: string, lineIdx: number }[] }[] = [];
     const headerRegex = /<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gi;
     
+    const cleanSourceName = sourceName ? sourceName.replace(/\.[^/.]+$/, "") : "";
+    
     let firstMatch = headerRegex.exec(content);
     headerRegex.lastIndex = 0; 
     
@@ -284,13 +286,13 @@ const App: React.FC = () => {
       const initialContent = content.substring(0, firstMatch.index);
       sections.push({ 
         header: "_initial_", 
-        fullHeader: "",
+        fullHeader: cleanSourceName,
         words: explode(initialContent, 1) 
       });
     } else if (!firstMatch) {
       sections.push({ 
         header: "_initial_", 
-        fullHeader: "",
+        fullHeader: cleanSourceName,
         words: explode(content, 1) 
       });
     }
@@ -304,7 +306,12 @@ const App: React.FC = () => {
       
       currentHierarchy[level - 1] = rawHeaderText;
       for (let i = level; i < 6; i++) currentHierarchy[i] = '';
-      const hierarchyPath = currentHierarchy.filter(h => h).join(' ');
+      
+      // Build hierarchy path, prepending source name if it's not already the first part
+      let hierarchyPath = currentHierarchy.filter(h => h).join(' ');
+      if (cleanSourceName && !hierarchyPath.startsWith(cleanSourceName)) {
+        hierarchyPath = hierarchyPath ? `${cleanSourceName} ${hierarchyPath}` : cleanSourceName;
+      }
 
       const start = headerRegex.lastIndex;
       const currentPos = headerRegex.lastIndex;
@@ -359,7 +366,7 @@ const App: React.FC = () => {
     
     const content = sourceCache[fullTargetName];
     if (content) {
-      const parsed = parseSections(content);
+      const parsed = parseSections(content, fullTargetName);
       sectionsCache[fullTargetName] = parsed;
       const matchingSection = parsed.find((s: any) => s.header === currentHeader);
       return { sections: parsed, prefix, matchingSection, type: currentType, targetName: shortTargetName };
@@ -476,11 +483,24 @@ const App: React.FC = () => {
         const paragraphs = f.content.split('\n');
         const newContent = paragraphs.map(p => {
           if (!p.trim()) return '';
-          const match = p.match(regex);
+          const cleanText = p.replace(/<[^>]*>/g, '');
+          const match = cleanText.match(regex);
           if (match) {
-            const dhm = match[1];
-            const rest = p.substring(dhm.length);
-            return `<b>${dhm}</b>${rest}`;
+            const dhmPlain = match[1];
+            let plainIdx = 0;
+            let originalIdx = 0;
+            while (plainIdx < dhmPlain.length && originalIdx < p.length) {
+              if (p[originalIdx] === '<') {
+                while (originalIdx < p.length && p[originalIdx] !== '>') originalIdx++;
+                originalIdx++;
+              } else {
+                plainIdx++;
+                originalIdx++;
+              }
+            }
+            const dhmPart = p.substring(0, originalIdx).replace(/<\/?b>/gi, '');
+            const restPart = p.substring(originalIdx);
+            return `<b>${dhmPart}</b>${restPart}`;
           }
           return p;
         }).join('\n');
@@ -506,7 +526,7 @@ const App: React.FC = () => {
     setTimeout(async () => {
       if (mode === 'auto') pushToHistory();
 
-      const sections = parseSections(activeSourceContent);
+      const sections = parseSections(activeSourceContent, selectedSource);
       setSourceSections(sections);
 
       const sourceSectionsCache: Record<string, any[]> = { [selectedSource]: sections };
@@ -607,8 +627,31 @@ const App: React.FC = () => {
                 }
               }
               
-              const finalEndPos = originalWords.slice(0, prefixWordCount).join(' ').length;
-              return `<b>${trimmed.substring(0, finalEndPos)}</b>${trimmed.substring(finalEndPos)}`;
+              let currentWordIdx = -1;
+              let inWord = false;
+              let finalEndPos = 0;
+              let inTag = false;
+
+              for (let i = 0; i < p.length; i++) {
+                if (p[i] === '<') inTag = true;
+                if (!inTag) {
+                  const isWhitespace = /\s/.test(p[i]);
+                  if (!isWhitespace && !inWord) {
+                    inWord = true;
+                    currentWordIdx++;
+                  } else if (isWhitespace && inWord) {
+                    inWord = false;
+                  }
+                }
+                if (currentWordIdx < prefixWordCount) finalEndPos = i + 1;
+                else break;
+                if (p[i] === '>') inTag = false;
+              }
+              while (finalEndPos < p.length && /[.:\-]/.test(p[finalEndPos])) finalEndPos++;
+              
+              const dhmPart = p.substring(0, finalEndPos).replace(/<\/?b>/gi, '');
+              const restPart = p.substring(finalEndPos);
+              return `<b>${dhmPart}</b>${restPart}`;
             }
 
             let effectiveSourceWords = currentSourceWords;
@@ -792,7 +835,10 @@ const App: React.FC = () => {
                 if (p[i] === '>') inTag = false;
               }
               while (finalEndPos < p.length && /[.:\-]/.test(p[finalEndPos])) finalEndPos++;
-              return `<b>${p.substring(0, finalEndPos)}</b>${p.substring(finalEndPos)}`;
+              
+              const dhmPart = p.substring(0, finalEndPos).replace(/<\/?b>/gi, '');
+              const restPart = p.substring(finalEndPos);
+              return `<b>${dhmPart}</b>${restPart}`;
             }
             return p;
           }).join('\n');
@@ -1064,7 +1110,7 @@ const App: React.FC = () => {
       }
       while (finalEndPos < p.length && /[.:\-]/.test(p[finalEndPos])) finalEndPos++;
       
-      paragraphs[item.paragraphIdx] = `<b>${p.substring(0, finalEndPos)}</b>${p.substring(finalEndPos)}`;
+      paragraphs[item.paragraphIdx] = `<b>${p.substring(0, finalEndPos).replace(/<\/?b>/gi, '')}</b>${p.substring(finalEndPos)}`;
       
       if (generateLinks && item.sourceLineIndex && item.sourceLineIndex > 0) {
         if (!nextFiles[item.fileIdx].links) nextFiles[item.fileIdx].links = [];
@@ -1385,15 +1431,11 @@ const App: React.FC = () => {
                           return (
                             <div key={i} className="px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs shadow-sm flex flex-col gap-3 hover:border-blue-300 transition-all group hover:shadow-md">
                               <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-1">
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <FileText size={14} className="text-blue-500" />
-                                    <span className="font-bold text-slate-800 group-hover:text-blue-700 transition-colors text-[13px]">{link.path_2}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-1.5">
-                                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-blue-100">{link.heRef_2 || 'ללא כותרת'}</span>
-                                    <span className="text-slate-400 text-[10px] font-medium">שורה {link.line_index_2}</span>
-                                  </div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <FileText size={14} className="text-blue-500 shrink-0" />
+                                  <span className="font-bold text-slate-800 group-hover:text-blue-700 transition-colors text-[12px] whitespace-nowrap">{link.path_2}</span>
+                                  <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-blue-100 whitespace-nowrap">{link.heRef_2 || 'ללא כותרת'}</span>
+                                  <span className="text-slate-400 text-[10px] font-medium whitespace-nowrap">שורה {link.line_index_2}</span>
                                 </div>
                               </div>
                               {linkedLine ? (
