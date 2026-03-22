@@ -168,16 +168,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const loadContent = async () => {
-      if (selectedSource && !localSource) {
+      if (selectedSource) {
         console.log(`Loading content for source: ${selectedSource}`);
         
-        // Strip .txt for internal keys
-        const cleanName = selectedSource.replace(/\.txt$/, '');
+        // Strip extension for internal keys (case-insensitive)
+        const cleanName = selectedSource.replace(/\.[^/.]+$/, "");
         
-        if (sourceCache[cleanName]) {
-          console.log(`Using cached content for: ${cleanName}`);
-          setSourceContent(sourceCache[cleanName]);
-        } else {
+        // Load main source if not local
+        if (!localSource) {
           try {
             await loadExternalScript(`data/${cleanName}.js`);
             if (window.appData && window.appData[cleanName]) {
@@ -188,29 +186,30 @@ const App: React.FC = () => {
           } catch (err) {
             console.error(`Error loading source ${cleanName}:`, err);
           }
+        } else {
+          // If local, ensure it's in cache
+          setSourceCache(prev => ({ ...prev, [cleanName]: localSource }));
         }
 
-        // Pre-fetch/load commentaries
+        // Pre-fetch/load commentaries (always try to load from server)
         const rashiName = `רשי על ${cleanName}`;
         const tosafotName = `תוספות על ${cleanName}`;
         
         for (const name of [rashiName, tosafotName]) {
-          if (!sourceCache[name]) {
-            try {
-              await loadExternalScript(`data/${name}.js`);
-              if (window.appData && window.appData[name]) {
-                const content = window.appData[name];
-                setSourceCache(prev => ({ ...prev, [name]: content }));
-              }
-            } catch (e) {
-              // Ignore errors for optional commentaries
+          try {
+            await loadExternalScript(`data/${name}.js`);
+            if (window.appData && window.appData[name]) {
+              const content = window.appData[name];
+              setSourceCache(prev => ({ ...prev, [name]: content }));
             }
+          } catch (e) {
+            // Ignore errors for optional commentaries
           }
         }
       }
     };
     loadContent();
-  }, [selectedSource, localSource, sourceCache]);
+  }, [selectedSource, localSource]);
 
   const currentFileContent = loadedFiles[previewIdx]?.content;
 
@@ -477,11 +476,24 @@ const App: React.FC = () => {
         const paragraphs = f.content.split('\n');
         const newContent = paragraphs.map(p => {
           if (!p.trim()) return '';
-          const match = p.match(regex);
+          const cleanText = p.replace(/<[^>]*>/g, '');
+          const match = cleanText.match(regex);
           if (match) {
-            const dhm = match[1];
-            const rest = p.substring(dhm.length);
-            return `<b>${dhm}</b>${rest}`;
+            const dhmPlain = match[1];
+            let plainIdx = 0;
+            let originalIdx = 0;
+            while (plainIdx < dhmPlain.length && originalIdx < p.length) {
+              if (p[originalIdx] === '<') {
+                while (originalIdx < p.length && p[originalIdx] !== '>') originalIdx++;
+                originalIdx++;
+              } else {
+                plainIdx++;
+                originalIdx++;
+              }
+            }
+            const dhmPart = p.substring(0, originalIdx).replace(/<\/?b>/gi, '');
+            const restPart = p.substring(originalIdx);
+            return `<b>${dhmPart}</b>${restPart}`;
           }
           return p;
         }).join('\n');
@@ -608,8 +620,31 @@ const App: React.FC = () => {
                 }
               }
               
-              const finalEndPos = originalWords.slice(0, prefixWordCount).join(' ').length;
-              return `<b>${trimmed.substring(0, finalEndPos)}</b>${trimmed.substring(finalEndPos)}`;
+              let currentWordIdx = -1;
+              let inWord = false;
+              let finalEndPos = 0;
+              let inTag = false;
+
+              for (let i = 0; i < p.length; i++) {
+                if (p[i] === '<') inTag = true;
+                if (!inTag) {
+                  const isWhitespace = /\s/.test(p[i]);
+                  if (!isWhitespace && !inWord) {
+                    inWord = true;
+                    currentWordIdx++;
+                  } else if (isWhitespace && inWord) {
+                    inWord = false;
+                  }
+                }
+                if (currentWordIdx < prefixWordCount) finalEndPos = i + 1;
+                else break;
+                if (p[i] === '>') inTag = false;
+              }
+              while (finalEndPos < p.length && /[.:\-]/.test(p[finalEndPos])) finalEndPos++;
+              
+              const dhmPart = p.substring(0, finalEndPos).replace(/<\/?b>/gi, '');
+              const restPart = p.substring(finalEndPos);
+              return `<b>${dhmPart}</b>${restPart}`;
             }
 
             let effectiveSourceWords = currentSourceWords;
@@ -793,7 +828,10 @@ const App: React.FC = () => {
                 if (p[i] === '>') inTag = false;
               }
               while (finalEndPos < p.length && /[.:\-]/.test(p[finalEndPos])) finalEndPos++;
-              return `<b>${p.substring(0, finalEndPos)}</b>${p.substring(finalEndPos)}`;
+              
+              const dhmPart = p.substring(0, finalEndPos).replace(/<\/?b>/gi, '');
+              const restPart = p.substring(finalEndPos);
+              return `<b>${dhmPart}</b>${restPart}`;
             }
             return p;
           }).join('\n');
@@ -1065,7 +1103,7 @@ const App: React.FC = () => {
       }
       while (finalEndPos < p.length && /[.:\-]/.test(p[finalEndPos])) finalEndPos++;
       
-      paragraphs[item.paragraphIdx] = `<b>${p.substring(0, finalEndPos)}</b>${p.substring(finalEndPos)}`;
+      paragraphs[item.paragraphIdx] = `<b>${p.substring(0, finalEndPos).replace(/<\/?b>/gi, '')}</b>${p.substring(finalEndPos)}`;
       
       if (generateLinks && item.sourceLineIndex && item.sourceLineIndex > 0) {
         if (!nextFiles[item.fileIdx].links) nextFiles[item.fileIdx].links = [];
@@ -1286,34 +1324,6 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-hidden p-4 flex flex-col">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-0">
-            <div className="flex items-center justify-between mb-6 shrink-0">
-              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <Eye className="text-blue-500" /> עורך טקסט
-              </h3>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                  <span className="text-xs font-bold text-slate-500">שם קובץ:</span>
-                  <input 
-                    type="text"
-                    value={loadedFiles[previewIdx]?.name || ''}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    className="bg-white border border-slate-200 rounded px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 w-48"
-                  />
-                </div>
-                <select 
-                  value={previewIdx} 
-                  onChange={e => setPreviewIdx(Number(e.target.value))}
-                  className="p-3 border border-slate-200 rounded-xl text-sm min-w-[200px] outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  {loadedFiles.length === 0 ? (
-                    <option>אין קבצים טעונים</option>
-                  ) : (
-                    loadedFiles.map((f, i) => <option key={i} value={i}>{f.name}</option>)
-                  )}
-                </select>
-              </div>
-            </div>
-
             <div className="flex gap-6 flex-1 min-h-0">
               <aside className="w-64 border border-slate-200 rounded-xl bg-slate-50 overflow-y-auto p-4 flex flex-col gap-1 shrink-0">
                 <div className="text-xs font-bold text-slate-400 mb-2 border-b border-slate-200 pb-2">ניווט כותרות</div>
@@ -1332,28 +1342,45 @@ const App: React.FC = () => {
               </aside>
 
               <div className="flex-1 flex flex-col min-h-0 h-full gap-4">
-                <div className="flex flex-wrap items-center gap-1 p-2 bg-slate-50 border border-slate-200 rounded-xl shrink-0">
-                  <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
-                    {['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].map(h => (
-                      <button
-                        key={h}
-                        onClick={() => insertTag(`<${h.toLowerCase()}>`, `</${h.toLowerCase()}>`)}
-                        className="px-2 py-1 text-[10px] font-bold bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                      >
-                        {h}
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl shrink-0">
+                  <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
+                      {['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].map(h => (
+                        <button
+                          key={h}
+                          onClick={() => insertTag(`<${h.toLowerCase()}>`, `</${h.toLowerCase()}>`)}
+                          className="px-2 py-1 text-[10px] font-bold bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                        >
+                          {h}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
+                      <button onClick={() => insertTag('<b>', '</b>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="מודגש">
+                        <Bold size={14} />
                       </button>
-                    ))}
+                      <button onClick={() => insertTag('<i>', '</i>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="נטוי">
+                        <Italic size={14} />
+                      </button>
+                      <button onClick={() => insertTag('<u>', '</u>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="קו תחתון">
+                        <Underline size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 px-2 border-l border-slate-200 ml-2">
-                    <button onClick={() => insertTag('<b>', '</b>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="מודגש">
-                      <Bold size={14} />
-                    </button>
-                    <button onClick={() => insertTag('<i>', '</i>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="נטוי">
-                      <Italic size={14} />
-                    </button>
-                    <button onClick={() => insertTag('<u>', '</u>')} className="p-1.5 bg-white border border-slate-200 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors" title="קו תחתון">
-                      <Underline size={14} />
-                    </button>
+
+                  <div className="flex items-center gap-2 px-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">קובץ:</span>
+                    <select 
+                      value={previewIdx} 
+                      onChange={e => setPreviewIdx(Number(e.target.value))}
+                      className="p-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[160px]"
+                    >
+                      {loadedFiles.length === 0 ? (
+                        <option>אין קבצים טעונים</option>
+                      ) : (
+                        loadedFiles.map((f, i) => <option key={i} value={i}>{f.name}</option>)
+                      )}
+                    </select>
                   </div>
                 </div>
 
@@ -1389,7 +1416,7 @@ const App: React.FC = () => {
                       {loadedFiles[previewIdx].links
                         ?.filter(link => link.line_index_1 === cursorLineIdx + 1)
                         .map((link, i) => {
-                          const cleanPath = link.path_2.replace(/\.txt$/, '');
+                          const cleanPath = link.path_2.replace(/\.[^/.]+$/, "");
                           const baseSourceName = selectedSource.replace(/\.[^/.]+$/, "");
                           const sourceText = sourceCache[cleanPath] || (cleanPath === baseSourceName ? activeSourceContent : null);
                           const linkedLine = sourceText ? sourceText.split('\n')[link.line_index_2 - 1] : null;
@@ -1397,15 +1424,11 @@ const App: React.FC = () => {
                           return (
                             <div key={i} className="px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs shadow-sm flex flex-col gap-3 hover:border-blue-300 transition-all group hover:shadow-md">
                               <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-1">
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <FileText size={14} className="text-blue-500" />
-                                    <span className="font-bold text-slate-800 group-hover:text-blue-700 transition-colors text-[13px]">{link.path_2}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-1.5">
-                                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-blue-100">{link.heRef_2 || 'ללא כותרת'}</span>
-                                    <span className="text-slate-400 text-[10px] font-medium">שורה {link.line_index_2}</span>
-                                  </div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <FileText size={14} className="text-blue-500 shrink-0" />
+                                  <span className="font-bold text-slate-800 group-hover:text-blue-700 transition-colors text-[12px] whitespace-nowrap">{link.path_2}</span>
+                                  <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-blue-100 whitespace-nowrap">{link.heRef_2 || 'ללא כותרת'}</span>
+                                  <span className="text-slate-400 text-[10px] font-medium whitespace-nowrap">שורה {link.line_index_2}</span>
                                 </div>
                               </div>
                               {linkedLine ? (
