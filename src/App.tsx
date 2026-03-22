@@ -357,7 +357,7 @@ const App: React.FC = () => {
     return sections;
   }, []);
 
-  const getTargetSections = useCallback((p: string, baseSourceNameWithExt: string, currentHeader: string, sectionsCache: Record<string, any[]>, lastType: 'tosafot' | 'rashi' | null) => {
+  const getTargetSections = useCallback((p: string, baseSourceNameWithExt: string, currentHeader: string, sectionsCache: Record<string, any[]>, lastType: 'tosafot' | 'rashi' | null, rawCache: Record<string, string>) => {
     const baseSourceName = baseSourceNameWithExt.replace(/\.[^/.]+$/, "");
     const prefixMatch = p.match(/^(תוס' ד"ה|תוד"ה|תוספות|רשד"ה|רש"י ד"ה|רש"י|פירש"י\s+ב?ד"ה|פרש"י\s+ב?ד"ה|ו?ב?תוספות\s+ב?ד"ה|ו?ב?תוס'\s+ב?ד"ה|שם\s+ב?ד"ה|ב?ד"ה|ד"ה|בא"ד|באו"ד|בגמרא|בגמ'|גמרא|גמ')(\s+|$)/);
     if (!prefixMatch) return null;
@@ -381,8 +381,6 @@ const App: React.FC = () => {
       currentType = null; // Explicitly Gemara (main source)
     } else {
       // Generic prefix (ד"ה, שם בד"ה etc.)
-      // If we are in a commentary file, default to Gemara (null)
-      // Unless we have a lastType that was explicitly set in this paragraph sequence
       currentType = isActiveFileCommentary ? null : lastType;
     }
 
@@ -396,7 +394,7 @@ const App: React.FC = () => {
       return { sections: sectionsCache[fullTargetName], prefix, matchingSection, type: currentType, targetName: shortTargetName };
     }
     
-    const content = sourceCache[fullTargetName];
+    const content = rawCache[fullTargetName];
     if (content) {
       const parsed = parseSections(content);
       sectionsCache[fullTargetName] = parsed;
@@ -405,7 +403,7 @@ const App: React.FC = () => {
     }
 
     return { sections: null, prefix, matchingSection: null, type: currentType, targetName: shortTargetName };
-  }, [sourceCache, parseSections]);
+  }, [parseSections]);
 
   const undo = () => {
     if (history.length === 0) return;
@@ -557,14 +555,15 @@ const App: React.FC = () => {
       // Ensure main source and commentaries are loaded into cache
       const cleanName = selectedSource.replace(/\.[^/.]+$/, "");
       const sourcesToLoad = [cleanName, `רשי על ${cleanName}`, `תוספות על ${cleanName}`];
+      const localCache = { ...sourceCache };
       
       for (const name of sourcesToLoad) {
-        if (!sourceCache[name]) {
+        if (!localCache[name]) {
           try {
             await loadExternalScript(`data/${name}.js`);
             if (window.appData && window.appData[name]) {
               const content = window.appData[name];
-              setSourceCache(prev => ({ ...prev, [name]: content }));
+              localCache[name] = content;
               if (name === cleanName) setSourceContent(content);
             }
           } catch (e) {
@@ -572,8 +571,11 @@ const App: React.FC = () => {
           }
         }
       }
+      
+      // Update global cache state
+      setSourceCache(localCache);
 
-      const activeContent = sourceCache[cleanName] || localSource || sourceContent;
+      const activeContent = localCache[cleanName] || localSource || sourceContent;
       if (!activeContent) {
         setIsProcessing(false);
         return;
@@ -619,7 +621,7 @@ const App: React.FC = () => {
         setCurrentHeaderIdx(0);
         
         if (finalHeaders.length > 0) {
-          processHeaderGroup(0, groups, finalHeaders, sections);
+          processHeaderGroup(0, groups, finalHeaders, sections, localCache);
         } else {
           setIsProcessing(false);
         }
@@ -669,7 +671,7 @@ const App: React.FC = () => {
             const cleanP = trimmed.replace(/<[^>]*>/g, '');
             const originalWords = cleanP.split(/\s+/);
             
-            const targetInfo = getTargetSections(cleanP, baseSourceName, currentCommentaryHeader, sourceSectionsCache, lastCommentaryType);
+            const targetInfo = getTargetSections(cleanP, baseSourceName, currentCommentaryHeader, sourceSectionsCache, lastCommentaryType, localCache);
             
             if (targetInfo?.isSameAsPrevious && lastLinkData) {
               const prefixWords = targetInfo.prefix.split(/\s+/);
@@ -908,7 +910,7 @@ const App: React.FC = () => {
     }, 100);
   };
 
-  const processHeaderGroup = async (headerIdx: number, groups: Record<string, { fileIdx: number, pIdx: number, text: string }[]>, headers: string[], sections: { header: string, fullHeader: string, words: { text: string, lineIdx: number }[] }[]) => {
+  const processHeaderGroup = async (headerIdx: number, groups: Record<string, { fileIdx: number, pIdx: number, text: string }[]>, headers: string[], sections: { header: string, fullHeader: string, words: { text: string, lineIdx: number }[] }[], rawCache: Record<string, string>) => {
     const header = headers[headerIdx];
     const paragraphs = groups[header];
     const section = sections.find(s => s.header === header) || sections[0];
@@ -939,7 +941,7 @@ const App: React.FC = () => {
       const originalWords = cleanP.split(/\s+/);
       
       const lastType = fileLastCommentaryTypes[item.fileIdx] || null;
-      const targetInfo = getTargetSections(cleanP, baseSourceName, header, sectionsCache, lastType);
+      const targetInfo = getTargetSections(cleanP, baseSourceName, header, sectionsCache, lastType, rawCache);
       
       if (targetInfo?.isSameAsPrevious && fileLastLinkData[item.fileIdx]) {
         const lastData = fileLastLinkData[item.fileIdx];
@@ -1205,7 +1207,7 @@ const App: React.FC = () => {
       setCurrentHeaderIdx(nextIdx);
       setIsProcessing(true);
       setTimeout(() => {
-        processHeaderGroup(nextIdx, reviewGroups, reviewHeaders, sourceSections);
+        processHeaderGroup(nextIdx, reviewGroups, reviewHeaders, sourceSections, sourceCache);
         const scrollContainer = document.getElementById('review-scroll-container');
         if (scrollContainer) scrollContainer.scrollTop = 0;
       }, 100);
