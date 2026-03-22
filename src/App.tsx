@@ -128,12 +128,17 @@ const App: React.FC = () => {
       try {
         await loadExternalScript('data/sources.js');
         if (window.appCategories) {
-          console.log('Loaded categories:', window.appCategories);
-          setCategories(window.appCategories);
-          const firstCat = Object.keys(window.appCategories)[0];
+          const filteredCategories: Record<string, string[]> = {};
+          for (const cat in window.appCategories) {
+            filteredCategories[cat] = window.appCategories[cat].filter(
+              (s: string) => !/^(רשי על|רש"י על|ר"שי על|תוספות על)/.test(s)
+            );
+          }
+          setCategories(filteredCategories);
+          const firstCat = Object.keys(filteredCategories)[0];
           if (firstCat) {
             setSelectedCategory(firstCat);
-            const catSources = window.appCategories[firstCat];
+            const catSources = filteredCategories[firstCat];
             setSources(catSources);
             if (catSources.length > 0) {
               setSelectedSource(catSources[0]);
@@ -142,7 +147,7 @@ const App: React.FC = () => {
         } else if (window.appSources && Array.isArray(window.appSources)) {
           // Fallback for flat structure
           const cleanSources = window.appSources
-            .filter((s: string) => !s.startsWith('רשי על') && !s.startsWith('תוספות על'));
+            .filter((s: string) => !/^(רשי על|רש"י על|ר"שי על|תוספות על)/.test(s));
           setSources(cleanSources);
           if (cleanSources.length > 0) {
             setSelectedSource(prev => prev || cleanSources[0]);
@@ -542,18 +547,41 @@ const App: React.FC = () => {
   };
 
   const processWithFuzzy = (mode: 'auto' | 'review' = 'auto') => {
-    if (!activeSourceContent) {
-      return;
-    }
+    if (!selectedSource) return;
     if (loadedFiles.length === 0) return;
     
     setIsProcessing(true);
     setProcessingProgress(0);
     
     setTimeout(async () => {
+      // Ensure main source and commentaries are loaded into cache
+      const cleanName = selectedSource.replace(/\.[^/.]+$/, "");
+      const sourcesToLoad = [cleanName, `רשי על ${cleanName}`, `תוספות על ${cleanName}`];
+      
+      for (const name of sourcesToLoad) {
+        if (!sourceCache[name]) {
+          try {
+            await loadExternalScript(`data/${name}.js`);
+            if (window.appData && window.appData[name]) {
+              const content = window.appData[name];
+              setSourceCache(prev => ({ ...prev, [name]: content }));
+              if (name === cleanName) setSourceContent(content);
+            }
+          } catch (e) {
+            console.warn(`Could not load source/commentary: ${name}`);
+          }
+        }
+      }
+
+      const activeContent = sourceCache[cleanName] || localSource || sourceContent;
+      if (!activeContent) {
+        setIsProcessing(false);
+        return;
+      }
+
       if (mode === 'auto') pushToHistory();
 
-      const sections = parseSections(activeSourceContent);
+      const sections = parseSections(activeContent);
       setSourceSections(sections);
 
       const sourceSectionsCache: Record<string, any[]> = { [selectedSource]: sections };
