@@ -168,16 +168,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const loadContent = async () => {
-      if (selectedSource && !localSource) {
+      if (selectedSource) {
         console.log(`Loading content for source: ${selectedSource}`);
         
-        // Strip .txt for internal keys
-        const cleanName = selectedSource.replace(/\.txt$/, '');
+        // Strip extension for internal keys (case-insensitive)
+        const cleanName = selectedSource.replace(/\.[^/.]+$/, "");
         
-        if (sourceCache[cleanName]) {
-          console.log(`Using cached content for: ${cleanName}`);
-          setSourceContent(sourceCache[cleanName]);
-        } else {
+        // Load main source if not local
+        if (!localSource) {
           try {
             await loadExternalScript(`data/${cleanName}.js`);
             if (window.appData && window.appData[cleanName]) {
@@ -188,29 +186,30 @@ const App: React.FC = () => {
           } catch (err) {
             console.error(`Error loading source ${cleanName}:`, err);
           }
+        } else {
+          // If local, ensure it's in cache
+          setSourceCache(prev => ({ ...prev, [cleanName]: localSource }));
         }
 
-        // Pre-fetch/load commentaries
+        // Pre-fetch/load commentaries (always try to load from server)
         const rashiName = `רשי על ${cleanName}`;
         const tosafotName = `תוספות על ${cleanName}`;
         
         for (const name of [rashiName, tosafotName]) {
-          if (!sourceCache[name]) {
-            try {
-              await loadExternalScript(`data/${name}.js`);
-              if (window.appData && window.appData[name]) {
-                const content = window.appData[name];
-                setSourceCache(prev => ({ ...prev, [name]: content }));
-              }
-            } catch (e) {
-              // Ignore errors for optional commentaries
+          try {
+            await loadExternalScript(`data/${name}.js`);
+            if (window.appData && window.appData[name]) {
+              const content = window.appData[name];
+              setSourceCache(prev => ({ ...prev, [name]: content }));
             }
+          } catch (e) {
+            // Ignore errors for optional commentaries
           }
         }
       }
     };
     loadContent();
-  }, [selectedSource, localSource, sourceCache]);
+  }, [selectedSource, localSource]);
 
   const currentFileContent = loadedFiles[previewIdx]?.content;
 
@@ -1378,7 +1377,7 @@ const App: React.FC = () => {
                       {loadedFiles[previewIdx].links
                         ?.filter(link => link.line_index_1 === cursorLineIdx + 1)
                         .map((link, i) => {
-                          const cleanPath = link.path_2.replace(/\.txt$/, '');
+                          const cleanPath = link.path_2.replace(/\.[^/.]+$/, "");
                           const baseSourceName = selectedSource.replace(/\.[^/.]+$/, "");
                           const sourceText = sourceCache[cleanPath] || (cleanPath === baseSourceName ? activeSourceContent : null);
                           const linkedLine = sourceText ? sourceText.split('\n')[link.line_index_2 - 1] : null;
