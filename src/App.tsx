@@ -330,7 +330,7 @@ const App: React.FC = () => {
     };
 
     const sections: { header: string, fullHeader: string, words: { text: string, lineIdx: number }[] }[] = [];
-    const headerRegex = /<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gi;
+    const headerRegex = /<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gis;
     
     let firstMatch = headerRegex.exec(content);
     headerRegex.lastIndex = 0; 
@@ -340,13 +340,13 @@ const App: React.FC = () => {
       sections.push({ 
         header: "_initial_", 
         fullHeader: "",
-        words: explode(initialContent, 1) 
+        words: explode(initialContent, 0) 
       });
     } else if (!firstMatch) {
       sections.push({ 
         header: "_initial_", 
         fullHeader: "",
-        words: explode(content, 1) 
+        words: explode(content, 0) 
       });
     }
 
@@ -361,6 +361,9 @@ const App: React.FC = () => {
       for (let i = level; i < 6; i++) currentHierarchy[i] = '';
       const hierarchyPath = currentHierarchy.filter(h => h).join(' ');
 
+      const headerLineStart = content.substring(0, match.index).split('\n').length - 1;
+      const headerWords = explode(match[0], headerLineStart);
+
       const start = headerRegex.lastIndex;
       const currentPos = headerRegex.lastIndex;
       const nextMatch = headerRegex.exec(content);
@@ -368,11 +371,12 @@ const App: React.FC = () => {
       headerRegex.lastIndex = currentPos; 
       
       const sectionContent = content.substring(start, end);
-      const headerLine = content.substring(0, match.index).split('\n').length;
+      const sectionContentStartLine = content.substring(0, headerRegex.lastIndex).split('\n').length - 1;
+      
       sections.push({
         header: normalizedHeader,
         fullHeader: hierarchyPath,
-        words: explode(sectionContent, headerLine + 1)
+        words: [...headerWords, ...explode(sectionContent, sectionContentStartLine)]
       });
     }
     return sections;
@@ -585,11 +589,14 @@ const App: React.FC = () => {
             if (window.appData && window.appData[name]) {
               const content = window.appData[name];
               localCache[name] = content;
-              if (name === cleanName) setSourceContent(content);
             }
           } catch (e) {
             console.warn(`Could not load source/commentary: ${name}`);
           }
+        }
+        // Always update sourceContent if it's the main source
+        if (name === cleanName && localCache[name]) {
+          setSourceContent(localCache[name]);
         }
       }
       
@@ -616,16 +623,29 @@ const App: React.FC = () => {
         groups["_initial_"] = [];
 
         for (let fileIdx = 0; fileIdx < loadedFiles.length; fileIdx++) {
-          const paragraphs = loadedFiles[fileIdx].content.split('\n');
+          const f = loadedFiles[fileIdx];
+          const paragraphs = f.content.split('\n');
+          
+          // Pre-detect headers in the target file for robust tracking
+          const headersInFile: { line: number, text: string }[] = [];
+          const hRegex = /<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gis;
+          let hMatch;
+          while ((hMatch = hRegex.exec(f.content)) !== null) {
+            headersInFile.push({
+              line: f.content.substring(0, hMatch.index).split('\n').length - 1,
+              text: hMatch[2].replace(/<[^>]*>/g, '').trim()
+            });
+          }
+
           let currentHeader = "_initial_";
           paragraphs.forEach((p, pIdx) => {
             const trimmed = p.trim();
             if (!trimmed) return;
 
-            const headerMatch = trimmed.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i);
-            if (headerMatch) {
+            const headerAtLine = headersInFile.find(h => h.line === pIdx);
+            if (headerAtLine) {
               // שמירת אותיות בכותרת הפרק
-              currentHeader = normalize(headerMatch[1].replace(/<[^>]*>/g, ''), true);
+              currentHeader = normalize(headerAtLine.text, true);
               if (!groups[currentHeader]) {
                 groups[currentHeader] = [];
                 headersOrder.push(currentHeader);
@@ -656,6 +676,18 @@ const App: React.FC = () => {
           
           const f = loadedFiles[fileIdx];
           const paragraphs = f.content.split('\n');
+          
+          // Pre-detect headers in the target file for robust tracking
+          const headersInFile: { line: number, text: string }[] = [];
+          const hRegex = /<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gis; // 's' flag for multi-line
+          let hMatch;
+          while ((hMatch = hRegex.exec(f.content)) !== null) {
+            headersInFile.push({
+              line: f.content.substring(0, hMatch.index).split('\n').length - 1,
+              text: hMatch[2].replace(/<[^>]*>/g, '').trim()
+            });
+          }
+
           let currentSourceSection = sections[0];
           let currentSourceWords = currentSourceSection.words;
           let lastMatchIndex = 0; 
@@ -669,9 +701,9 @@ const App: React.FC = () => {
             const trimmed = p.trim();
             if (!trimmed) return '';
 
-            const headerMatch = trimmed.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i);
-            if (headerMatch) {
-              const headerText = headerMatch[1].replace(/<[^>]*>/g, '');
+            const headerAtLine = headersInFile.find(h => h.line === pIdx);
+            if (headerAtLine) {
+              const headerText = headerAtLine.text;
               // Detect commentary type from header
               if (headerText.includes('תוס') || headerText.includes('תוד')) {
                 lastCommentaryType = 'tosafot';
@@ -833,67 +865,81 @@ const App: React.FC = () => {
                   const targetFileName = targetInfo ? targetInfo.targetName : baseSourceName;
                   const finalPath = targetFileName.endsWith('.txt') ? targetFileName : targetFileName + '.txt';
                   
-                  // Link 1: To the commentary (Rashi/Tosafot) - only if we found the section in the commentary
-                  if (targetInfo && targetInfo.matchingSection) {
-                    const link1 = {
+                  if (!targetInfo) {
+                    // Direct match in main source (Gemara)
+                    const link = {
                       line_index_1: pIdx + 1,
                       line_index_2: matchedLineIdx,
                       heRef_2: effectiveHeader,
                       path_2: finalPath,
                       "Conection Type": "commentary"
                     };
-                    fileLinks.push(link1);
-                    lastLinkData = { ...link1 };
+                    fileLinks.push(link);
+                    lastLinkData = { ...link };
+                    lastMainLinkData = null;
+                    lastMatchIndex = bestSourceIdx + bestConsumedSource;
                   } else {
-                    lastLinkData = null;
-                  }
-                  
-                  lastMainLinkData = null;
-
-                  // Link 2: To the main source (Gemara) - only if we switched sources or if Link 1 was commentary
-                  if (targetInfo && targetInfo.type !== null) {
-                    // Search for the same words in the main source
-                    let mainBestIdx = -1;
-                    let mainBestScore = -Infinity;
-                    
-                    for (let j = 0; j < currentSourceWords.length; j++) {
-                      let sourceOffset = 0;
-                      let matched = 0;
-                      for (let k = 0; k < searchWords.length; k++) {
-                        const m = checkMatch(searchWords[k], currentSourceWords.slice(j + sourceOffset));
-                        if (m.consumedSource > 0) {
-                          matched++;
-                          sourceOffset += m.consumedSource;
-                        } else break;
-                      }
-                      if (matched > 0) {
-                        let score = matched - (Math.abs(j - lastMatchIndex) * 0.005);
-                        if (score > mainBestScore) {
-                          mainBestScore = score;
-                          mainBestIdx = j;
-                        }
-                      }
-                    }
-
-                    if (mainBestIdx !== -1) {
-                      const shortBaseName = baseSourceName.split('/').pop() || baseSourceName;
-                      const mainFinalPath = shortBaseName.endsWith('.txt') ? shortBaseName : shortBaseName + '.txt';
-                      const link2 = {
+                    // Commentary match (Rashi/Tosafot)
+                    if (targetInfo.matchingSection) {
+                      const link1 = {
                         line_index_1: pIdx + 1,
-                        line_index_2: currentSourceWords[mainBestIdx].lineIdx,
-                        heRef_2: currentSourceSection.fullHeader,
-                        path_2: mainFinalPath,
+                        line_index_2: matchedLineIdx,
+                        heRef_2: effectiveHeader,
+                        path_2: finalPath,
                         "Conection Type": "commentary"
                       };
-                      fileLinks.push(link2);
-                      lastMainLinkData = { ...link2 };
-                      lastMatchIndex = mainBestIdx + 1; // Update lastMatchIndex based on main source
+                      fileLinks.push(link1);
+                      lastLinkData = { ...link1 };
+                    } else {
+                      lastLinkData = null;
                     }
-                  } else {
-                    lastMatchIndex = bestSourceIdx + bestConsumedSource;
+                    
+                    lastMainLinkData = null;
+
+                    // Link 2: To the main source (Gemara)
+                    if (targetInfo.type !== null) {
+                      let mainBestIdx = -1;
+                      let mainBestScore = -Infinity;
+                      
+                      for (let j = 0; j < currentSourceWords.length; j++) {
+                        let sourceOffset = 0;
+                        let matched = 0;
+                        for (let k = 0; k < searchWords.length; k++) {
+                          const m = checkMatch(searchWords[k], currentSourceWords.slice(j + sourceOffset));
+                          if (m.consumedSource > 0) {
+                            matched++;
+                            sourceOffset += m.consumedSource;
+                          } else break;
+                        }
+                        if (matched > 0) {
+                          let score = matched - (Math.abs(j - lastMatchIndex) * 0.005);
+                          if (score > mainBestScore) {
+                            mainBestScore = score;
+                            mainBestIdx = j;
+                          }
+                        }
+                      }
+
+                      if (mainBestIdx !== -1) {
+                        const shortBaseName = baseSourceName.split('/').pop() || baseSourceName;
+                        const mainFinalPath = shortBaseName.endsWith('.txt') ? shortBaseName : shortBaseName + '.txt';
+                        const link2 = {
+                          line_index_1: pIdx + 1,
+                          line_index_2: currentSourceWords[mainBestIdx].lineIdx,
+                          heRef_2: currentSourceSection.fullHeader,
+                          path_2: mainFinalPath,
+                          "Conection Type": "commentary"
+                        };
+                        fileLinks.push(link2);
+                        lastMainLinkData = { ...link2 };
+                        lastMatchIndex = mainBestIdx + 1;
+                      }
+                    } else {
+                      lastMatchIndex = bestSourceIdx + bestConsumedSource;
+                    }
                   }
                 } else {
-                   if (!targetInfo) lastMatchIndex = bestSourceIdx + bestConsumedSource;
+                  if (!targetInfo) lastMatchIndex = bestSourceIdx + bestConsumedSource;
                 }
               }
 
@@ -1270,7 +1316,7 @@ const App: React.FC = () => {
   const previewHeaders = React.useMemo(() => {
     if (!currentFileContent) return [];
     const headers: { tagName: string; textContent: string; startIndex: number; length: number }[] = [];
-    const regex = /<(h[1-6])[^>]*>(.*?)<\/h[1-6]>/gi;
+    const regex = /<(h[1-6])[^>]*>(.*?)<\/h[1-6]>/gis;
     let match;
     while ((match = regex.exec(currentFileContent)) !== null) {
       headers.push({
